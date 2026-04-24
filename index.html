@@ -1,0 +1,2108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Task Reminder</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<style>
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#c4b5fd;border-radius:3px}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:9999px;font-size:.68rem;font-weight:600;white-space:nowrap}
+.contact-row{cursor:pointer;transition:background .1s}
+.contact-row:hover{background:#faf5ff}
+.contact-row.is-overdue{background:#fff1f2}
+.contact-row.is-today{background:#f5f3ff}
+.contact-row.is-overdue:hover{background:#fee2e2}
+.contact-row.is-today:hover{background:#ede9fe}
+.modal-overlay{animation:fadeIn .18s ease}
+.modal-panel{animation:slideUp .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+.toast{animation:slideInR .3s ease}
+@keyframes slideInR{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+input[type=range]{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;background:#7c3aed;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.top-nav-item{color:#6b7280;transition:all .15s;position:relative;font-size:.875rem}
+.top-nav-item:hover{color:#6d28d9}
+.top-nav-item.active{color:#6d28d9;font-weight:600}
+.top-nav-item.active::after{content:'';position:absolute;bottom:-17px;left:4px;right:4px;height:2px;background:#7c3aed;border-radius:2px}
+.spinner{border:3px solid #e2e8f0;border-top-color:#7c3aed;border-radius:50%;width:32px;height:32px;animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.req-cb{accent-color:#7c3aed}
+</style>
+</head>
+<body class="bg-gray-50 font-sans antialiased">
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="login-screen" class="fixed inset-0 z-[999] bg-gradient-to-br from-violet-950 via-indigo-900 to-violet-900 flex items-center justify-center">
+  <div class="w-full max-w-sm mx-4">
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 bg-gradient-to-br from-violet-400 to-indigo-500 rounded-2xl flex items-center justify-center text-3xl shadow-xl mx-auto mb-4">💼</div>
+      <h1 class="text-2xl font-bold text-white">CRM Pro</h1>
+      <p class="text-violet-300 text-sm mt-1">Sales Task Manager</p>
+    </div>
+    <div class="bg-white/10 backdrop-blur rounded-2xl p-6 shadow-2xl border border-white/10">
+      <div id="login-error" class="hidden bg-red-500/20 border border-red-500/40 text-red-200 text-sm px-4 py-2.5 rounded-xl mb-4"></div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-violet-200 mb-1.5">Username</label>
+          <input type="text" id="login-user" placeholder="Enter username"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-violet-400 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+            onkeydown="if(event.key==='Enter') doLogin()">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-violet-200 mb-1.5">Password</label>
+          <div class="relative">
+            <input type="password" id="login-pass" placeholder="Enter password"
+              class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-violet-400 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
+              onkeydown="if(event.key==='Enter') doLogin()">
+            <button onclick="togglePassVis()" class="absolute right-3 top-1/2 -translate-y-1/2 text-violet-300 hover:text-white text-sm" id="pass-eye">👁</button>
+          </div>
+        </div>
+        <button onclick="doLogin()" class="w-full bg-violet-500 hover:bg-violet-600 text-white font-semibold py-3 rounded-xl transition-colors text-sm mt-2">
+          Sign In →
+        </button>
+      </div>
+    </div>
+    <p class="text-center text-violet-700 text-xs mt-4">Default admin: <span class="text-violet-400">admin / admin@123</span></p>
+  </div>
+</div>
+
+
+<div id="app" class="flex flex-col h-screen overflow-hidden">
+
+  <!-- ===== TOP NAV ===== -->
+  <header class="bg-white border-b border-gray-200 shadow-sm flex-shrink-0 z-30">
+    <div class="h-14 flex items-center px-4 gap-3">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-2.5 flex-shrink-0 pr-3 border-r border-gray-200">
+        <div class="w-8 h-8 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow text-base">💼</div>
+        <div class="hidden md:block">
+          <div class="font-bold text-gray-900 text-sm leading-tight">CRM Pro</div>
+          <div class="text-xs text-gray-400 leading-tight">Sales Manager</div>
+        </div>
+      </div>
+
+      <!-- Nav Links -->
+      <nav class="flex items-center h-full">
+        <button onclick="setView('dashboard')" id="nav-dashboard" class="top-nav-item active px-4 py-2">Overview</button>
+        <button onclick="setView('contacts')" id="nav-contacts" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          Contacts
+          <span class="text-xs text-gray-400 font-normal tabular-nums" id="total-count">—</span>
+        </button>
+        <button onclick="setView('today')" id="nav-today" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          Today
+          <span class="hidden text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-none" id="today-badge">0</span>
+        </button>
+        <button onclick="setView('overdue')" id="nav-overdue" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          Overdue
+          <span class="hidden text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-none" id="overdue-badge">0</span>
+        </button>
+        <button onclick="setView('hotleads')" id="nav-hotleads" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          Hot Leads
+          <span class="hidden text-xs bg-orange-400 text-white px-1.5 py-0.5 rounded-full font-semibold leading-none" id="hot-badge">0</span>
+        </button>
+        <button onclick="setView('myleads')" id="nav-myleads" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          My Leads
+          <span class="hidden text-xs bg-violet-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-none" id="my-badge">0</span>
+        </button>
+      </nav>
+
+      <!-- Spacer -->
+      <div class="flex-1"></div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-1.5">
+        <!-- Search -->
+        <div class="relative hidden sm:block">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+          <input type="text" id="global-search" placeholder="Search…"
+            class="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 w-40 xl:w-52"
+            oninput="onSearch(this.value)">
+        </div>
+        <input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" onchange="importExcel(this)">
+        <button onclick="exportExcel()" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-medium admin-only hidden md:inline-flex">📊 Excel</button>
+        <button onclick="exportPDF()" class="text-xs bg-rose-500 hover:bg-rose-600 text-white px-3 py-1.5 rounded-xl font-medium admin-only hidden md:inline-flex">📄 PDF</button>
+        <button onclick="toggleNotifPanel()" class="relative w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-violet-50 rounded-xl transition-colors" title="Upcoming follow-ups">
+          🔔<span id="notif-dot" class="hidden absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+        </button>
+        <button onclick="openSettings()" title="Settings" class="relative w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-violet-50 rounded-xl transition-colors text-base admin-only">
+          ⚙️<span id="gs-dot" class="hidden absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+        </button>
+        <!-- User dropdown -->
+        <div class="relative group ml-1">
+          <button class="flex items-center gap-2 bg-violet-50 hover:bg-violet-100 rounded-xl px-2.5 py-1.5 transition-colors">
+            <div id="header-avatar" class="w-7 h-7 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xs font-bold">A</div>
+            <span id="header-username" class="text-sm font-medium text-gray-700 max-w-[70px] truncate hidden sm:block">Admin</span>
+            <span id="header-role-badge" class="text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-semibold hidden sm:block">Admin</span>
+          </button>
+          <div class="hidden group-hover:block absolute right-0 top-full mt-1 bg-white border shadow-xl rounded-xl w-44 z-50 overflow-hidden">
+            <div class="px-4 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-t-xl">
+              <div class="text-white text-sm font-semibold" id="dropdown-name">Admin</div>
+              <div class="text-violet-200 text-xs" id="dropdown-role">Administrator</div>
+            </div>
+            <button onclick="openChangePass()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 text-gray-700">🔑 Change Password</button>
+            <div class="border-t"></div>
+            <button onclick="doLogout()" class="w-full text-left px-4 py-2.5 text-sm hover:bg-red-50 text-red-600 font-medium">↩ Logout</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="flex-1 overflow-auto p-5 bg-gray-50" id="main-content">
+    <div id="loading-screen" class="flex flex-col items-center justify-center h-full">
+      <div class="spinner mb-4"></div>
+      <p class="text-gray-500 text-sm">Loading CRM data…</p>
+    </div>
+  </main>
+</div>
+
+<!-- ===== CONTACT MODAL ===== -->
+<div id="contact-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-start justify-center overflow-y-auto py-5 modal-overlay" onclick="closeModalBackdrop(event)">
+  <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 my-auto" onclick="event.stopPropagation()">
+
+    <!-- Modal Header -->
+    <div class="flex items-start justify-between p-5 border-b bg-gradient-to-r from-violet-700 to-indigo-600 rounded-t-2xl">
+      <div class="flex-1 min-w-0">
+        <h2 class="text-white font-bold text-lg leading-tight truncate" id="m-company"></h2>
+        <p class="text-violet-200 text-sm mt-1" id="m-subinfo"></p>
+      </div>
+      <div class="flex items-center gap-2 ml-3 flex-shrink-0">
+        <span id="m-zone-badge" class="text-xs px-2 py-1 bg-white/20 text-white rounded-full font-medium"></span>
+        <button id="dnc-btn" onclick="toggleDNC()" class="text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors">🚫 DNC</button>
+        <button onclick="closeModal()" class="w-7 h-7 flex items-center justify-center text-violet-200 hover:text-white hover:bg-white/20 rounded-lg transition-colors text-sm">✕</button>
+      </div>
+    </div>
+
+    <!-- Contact Info Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 p-5 pb-0">
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-0.5">Panel Type</div>
+        <div class="text-xs font-semibold text-gray-700 leading-tight" id="m-panel"></div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-0.5">Email</div>
+        <div class="text-xs text-blue-600 truncate" id="m-email"></div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-0.5">State</div>
+        <div class="text-xs font-semibold text-gray-700" id="m-state"></div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-0.5">Address</div>
+        <div class="text-xs text-gray-600 truncate" id="m-address"></div>
+      </div>
+    </div>
+
+    <!-- CRM Form -->
+    <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+      <!-- LEFT -->
+      <div class="space-y-4">
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">📝 Notes</label>
+          <textarea id="f-notes" rows="3" maxlength="500" placeholder="Write call summary, discussion points, remarks…"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none"
+            oninput="document.getElementById('char-count').textContent=this.value.length"></textarea>
+          <div class="text-right text-xs text-gray-400 mt-0.5"><span id="char-count">0</span>/500</div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-sm font-semibold text-gray-700">📋 Call History</label>
+            <span class="text-xs text-gray-400" id="log-count-lbl"></span>
+          </div>
+          <div id="call-log-box" class="border border-gray-200 rounded-xl bg-gray-50 max-h-36 overflow-y-auto text-xs">
+            <p class="text-gray-400 text-center py-4" id="call-log-empty">No calls logged yet</p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">🏷️ Category</label>
+          <select id="f-category" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <option value="">— Select Category —</option>
+            <option value="Hot Lead">🔵 Hot Lead</option>
+            <option value="Warm Lead">🟡 Warm Lead</option>
+            <option value="Cold Lead">🔴 Cold Lead</option>
+            <option value="Existing Client">🟢 Existing Client</option>
+            <option value="Inactive">⚫ Inactive</option>
+            <option value="Prospect">🟠 Prospect</option>
+            <option value="Not Relevant">⚪ Not Relevant</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">📞 Call Status</label>
+          <select id="f-callstatus" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <option value="">— Select Status —</option>
+            <option value="Connected - Positive">✅ Connected - Positive</option>
+            <option value="Connected - Neutral">✅ Connected - Neutral</option>
+            <option value="Connected - Negative">❌ Connected - Negative</option>
+            <option value="Not Reachable">📵 Not Reachable</option>
+            <option value="Ringing No Answer">🔔 Ringing No Answer</option>
+            <option value="Switched Off">📴 Switched Off</option>
+            <option value="Call Back Requested">🔁 Call Back Requested</option>
+            <option value="Sent to Voicemail">📩 Sent to Voicemail</option>
+            <option value="DND / Refused">🚫 DND / Refused</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">📱 Mobile / Alt Phone</label>
+          <div class="flex gap-2">
+            <input type="tel" id="f-altphone" placeholder="Alternate or mobile number"
+              class="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <a id="f-altphone-wa" href="#" target="_blank" onclick="return openWA('f-altphone')"
+              class="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-medium flex items-center gap-1 whitespace-nowrap">💬 WA</a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT -->
+      <div class="space-y-4">
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">📅 Last Contact Date</label>
+          <div class="flex gap-2">
+            <input type="date" id="f-lastdate" class="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" oninput="updLastAgo()">
+            <button onclick="setToday('f-lastdate');updLastAgo()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-xs rounded-xl transition-colors font-medium">Today</button>
+          </div>
+          <div class="text-xs text-gray-400 mt-1" id="last-ago"></div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">📆 Next Follow-Up Date & Time</label>
+          <div class="flex gap-2 mb-2">
+            <input type="date" id="f-nextdate" class="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" oninput="autoSchedule()">
+            <input type="time" id="f-nexttime" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+          </div>
+          <div class="flex gap-1.5 flex-wrap">
+            <button onclick="addDaysInput(0)" class="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2 py-1 rounded-lg font-medium">Tomorrow</button>
+            <button onclick="addDaysInput(2)" class="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2 py-1 rounded-lg font-medium">+3 Days</button>
+            <button onclick="addDaysInput(6)" class="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2 py-1 rounded-lg font-medium">+1 Week</button>
+            <button onclick="addDaysInput(29)" class="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-2 py-1 rounded-lg font-medium">+1 Month</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">🔄 Follow-Up Status</label>
+          <select id="f-fustatus" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <option value="">— Select Status —</option>
+            <option value="Completed">🟢 Completed</option>
+            <option value="Scheduled">🔵 Scheduled</option>
+            <option value="Pending">🟡 Pending</option>
+            <option value="Overdue">🔴 Overdue</option>
+            <option value="On Hold">⏸️ On Hold</option>
+            <option value="Cancelled">🚫 Cancelled</option>
+            <option value="Deal Closed">✅ Deal Closed</option>
+            <option value="Lost / Rejected">❌ Lost / Rejected</option>
+          </select>
+        </div>
+
+        <div class="admin-only">
+          <label class="block text-sm font-semibold text-gray-700 mb-1.5">👤 Assign To</label>
+          <select id="f-assignto" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <option value="">— Unassigned —</option>
+          </select>
+          <div class="text-xs text-gray-400 mt-1" id="assigned-lbl"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="flex items-center justify-between p-5 border-t bg-gray-50 rounded-b-2xl">
+      <div class="flex items-center gap-2">
+        <button onclick="logCall()" class="text-sm bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-xl transition-colors font-medium flex items-center gap-2">
+          📞 Log Call
+          <span id="call-count-badge" class="bg-white/25 text-white text-xs px-1.5 py-0.5 rounded-full font-bold hidden" id="call-count-badge">0</span>
+        </button>
+        <a id="m-wa-link" href="#" target="_blank" class="text-sm bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">💬 WhatsApp</a>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="closeModal()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">Cancel</button>
+        <button onclick="saveModal()" class="text-sm bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-xl transition-colors font-semibold">💾 Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== NOTIFICATION PANEL ===== -->
+<div id="notif-panel" class="hidden fixed top-16 right-4 w-72 bg-white rounded-2xl shadow-xl border z-40 overflow-hidden">
+  <div class="p-3 border-b flex items-center justify-between bg-gray-50">
+    <span class="font-semibold text-sm text-gray-800">🔔 Upcoming Follow-ups</span>
+    <button onclick="toggleNotifPanel()" class="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+  </div>
+  <div id="notif-list" class="max-h-72 overflow-y-auto"></div>
+</div>
+
+<!-- ===== COLUMN MAPPER MODAL ===== -->
+<div id="mapper-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center modal-overlay">
+  <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4">
+    <div class="p-5 border-b bg-gradient-to-r from-violet-700 to-violet-600 rounded-t-2xl flex items-start justify-between">
+      <div>
+        <h2 class="text-white font-bold text-lg">📥 Map Your Columns</h2>
+        <p class="text-violet-200 text-sm mt-0.5">Match your file's columns to CRM fields</p>
+      </div>
+      <button onclick="downloadTemplate()" class="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors ml-4 flex-shrink-0">
+        📋 Download Template
+      </button>
+    </div>
+    <div class="p-5">
+      <div id="mapper-info-box" class="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-4 text-sm text-violet-700">
+        <div class="flex items-start gap-2">
+          <span class="mt-0.5">💡</span>
+          <div>
+            <p class="font-semibold mb-1">First time? Download the template first!</p>
+            <p class="text-xs text-violet-600">Click <strong>"Download Template"</strong> above → fill your data in that file → upload it here. All columns will auto-match perfectly.</p>
+          </div>
+        </div>
+      </div>
+      <div id="mapper-upload-info" class="hidden bg-violet-50 border border-violet-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-2 text-sm text-violet-700">
+        <span>ℹ️</span>
+        <span id="mapper-file-info">File loaded</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1" id="mapper-fields"></div>
+    </div>
+    <div class="flex items-center justify-between p-5 border-t bg-gray-50 rounded-b-2xl">
+      <button onclick="closeMapper()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100">Cancel</button>
+      <div class="flex items-center gap-2">
+        <button onclick="document.getElementById('import-file').click()" class="text-sm px-4 py-2 border border-violet-300 text-violet-700 rounded-xl hover:bg-violet-50 transition-colors font-medium">📂 Choose File</button>
+        <button onclick="runMappedImport()" id="do-import-btn" class="text-sm bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-xl font-semibold transition-colors disabled:opacity-40" disabled>Import Contacts →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== GOOGLE SHEETS SETTINGS MODAL ===== -->
+<div id="gs-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center modal-overlay" onclick="closeSettings()">
+  <div class="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4" onclick="event.stopPropagation()">
+
+    <div class="p-5 border-b bg-gradient-to-r from-violet-700 to-indigo-600 rounded-t-2xl flex items-center justify-between">
+      <div>
+        <h2 class="text-white font-bold text-lg">⚙️ Settings</h2>
+        <p class="text-violet-200 text-sm mt-0.5">Import, user management &amp; sync</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="gs-status-badge" class="text-xs px-3 py-1 rounded-full font-semibold bg-white/20 text-white">Not configured</span>
+        <button onclick="closeSettings()" class="w-7 h-7 flex items-center justify-center text-violet-200 hover:text-white hover:bg-white/20 rounded-lg">✕</button>
+      </div>
+    </div>
+
+    <!-- Tab nav -->
+    <div class="flex border-b bg-gray-50 rounded-none px-5 gap-1 pt-2">
+      <button onclick="switchSettingsTab('import')" id="stab-import" class="settings-tab active px-4 py-2.5 text-sm font-medium border-b-2 border-violet-600 text-violet-700 -mb-px">📥 Import</button>
+      <button onclick="switchSettingsTab('users')" id="stab-users" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">👥 Users</button>
+      <button onclick="switchSettingsTab('sync')" id="stab-sync" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">🔗 Google Sheets</button>
+      <button onclick="switchSettingsTab('backup')" id="stab-backup" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">💾 Backup</button>
+    </div>
+
+    <!-- TAB: Import -->
+    <div id="stab-panel-import" class="p-5 space-y-5 max-h-[65vh] overflow-y-auto">
+      <div class="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 flex items-start gap-2 text-sm text-violet-700">
+        <span class="mt-0.5">💡</span>
+        <div>
+          <p class="font-semibold mb-1">First time? Download the template first!</p>
+          <p class="text-xs text-violet-600">Click <strong>Download Template</strong> → fill your data → upload here. All columns auto-match.</p>
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="downloadTemplate()" class="flex items-center gap-2 bg-white border border-violet-300 hover:bg-violet-50 text-violet-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
+          📋 Download Template
+        </button>
+        <button onclick="document.getElementById('import-file').click()" class="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
+          📂 Choose File to Import
+        </button>
+      </div>
+      <div class="border-t pt-4">
+        <p class="text-sm font-semibold text-gray-700 mb-3">Export Data</p>
+        <div class="flex gap-2">
+          <button onclick="exportExcel();closeSettings()" class="text-sm bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-medium">📊 Export Excel</button>
+          <button onclick="exportPDF();closeSettings()" class="text-sm bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-xl font-medium">📄 Export PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Users -->
+    <div id="stab-panel-users" class="hidden p-5 space-y-4 max-h-[65vh] overflow-y-auto">
+      <div class="bg-gray-50 rounded-xl p-4 border">
+        <p class="text-sm font-semibold text-gray-700 mb-3">➕ Add New User</p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <input type="text" id="nu-name" placeholder="Full Name" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+          <input type="text" id="nu-user" placeholder="Username" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+          <input type="password" id="nu-pass" placeholder="Password" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+          <select id="nu-role" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            <option value="user">👤 User</option>
+            <option value="admin">🔑 Admin</option>
+          </select>
+        </div>
+        <button onclick="addUser()" class="mt-3 text-sm bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">Add User</button>
+      </div>
+      <div id="users-list-inline" class="max-h-64 overflow-y-auto"></div>
+    </div>
+
+    <!-- TAB: Google Sheets Sync -->
+    <div id="stab-panel-sync" class="hidden p-5 space-y-5 max-h-[65vh] overflow-y-auto">
+
+      <!-- Step 1 -->
+      <div class="border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
+          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+          <span class="font-semibold text-sm text-gray-800">Create a Google Sheet</span>
+        </div>
+        <div class="p-4 text-sm text-gray-600 space-y-2">
+          <p>Go to <a href="https://sheets.google.com" target="_blank" class="text-blue-600 underline">sheets.google.com</a> → create a new blank sheet → name it <strong>CRM Data</strong> (or anything you like).</p>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
+          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+          <span class="font-semibold text-sm text-gray-800">Open Apps Script &amp; Paste Code</span>
+        </div>
+        <div class="p-4 space-y-3">
+          <p class="text-sm text-gray-600">In your Sheet → <strong>Extensions → Apps Script</strong> → delete all existing code → paste this:</p>
+          <div class="relative">
+            <button onclick="copyScript()" class="absolute top-2 right-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 px-2 py-1 rounded-lg text-gray-600 z-10">📋 Copy</button>
+            <pre id="apps-script-code" class="bg-gray-900 text-green-300 text-xs p-4 rounded-xl overflow-x-auto leading-relaxed whitespace-pre-wrap">const SHEET = 'CRM_Data';
+
+function doGet(e) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sh = ss.getSheetByName(SHEET);
+    if (!sh || sh.getLastRow() <= 1) return out({crm:{}});
+    const vals = sh.getDataRange().getValues();
+    const heads = vals[0];
+    const crm = {};
+    for (let i = 1; i < vals.length; i++) {
+      const row = {};
+      heads.forEach((h,j) => row[h] = vals[i][j]);
+      const idx = String(row.idx);
+      try { row.requirementType = JSON.parse(row.requirementType||'[]'); } catch(e){ row.requirementType=[]; }
+      delete row.idx; delete row.updatedAt;
+      crm[idx] = row;
+    }
+    return out({crm, ts: new Date().toISOString()});
+  } catch(e) { return out({error: e.message}); }
+}
+
+function doPost(e) {
+  try {
+    const crm = JSON.parse(e.postData.contents).crm || {};
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sh = ss.getSheetByName(SHEET);
+    if (!sh) sh = ss.insertSheet(SHEET);
+    const heads = ['idx','companyName','notes','category','callStatus','callAttempts',
+      'interestLevel','requirementType','lastContactDate','nextFollowUpDate',
+      'nextFollowUpTime','followUpStatus','dealProbability','updatedAt'];
+    const rows = [heads];
+    for (const idx in crm) {
+      const c = crm[idx];
+      rows.push([idx, c.companyName||'', c.notes||'', c.category||'',
+        c.callStatus||'', c.callAttempts||0, c.interestLevel||0,
+        JSON.stringify(c.requirementType||[]), c.lastContactDate||'',
+        c.nextFollowUpDate||'', c.nextFollowUpTime||'',
+        c.followUpStatus||'', c.dealProbability||0, new Date().toISOString()]);
+    }
+    sh.clearContents();
+    sh.getRange(1,1,rows.length,heads.length).setValues(rows);
+    return out({status:'ok', rows: rows.length-1});
+  } catch(e) { return out({error: e.message}); }
+}
+
+function out(d) {
+  return ContentService.createTextOutput(JSON.stringify(d))
+    .setMimeType(ContentService.MimeType.JSON);
+}</pre>
+          </div>
+          <p class="text-sm text-gray-500">Then click <strong>Save</strong> (Ctrl+S).</p>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
+          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+          <span class="font-semibold text-sm text-gray-800">Deploy as Web App</span>
+        </div>
+        <div class="p-4 text-sm text-gray-600 space-y-1.5">
+          <p>Click <strong>Deploy → New deployment</strong></p>
+          <p>Type: <strong>Web app</strong></p>
+          <p>Execute as: <strong>Me</strong></p>
+          <p>Who has access: <strong>Anyone</strong></p>
+          <p>Click <strong>Deploy</strong> → copy the <strong>Web app URL</strong></p>
+        </div>
+      </div>
+
+      <!-- Step 4 — URL input -->
+      <div class="border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
+          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">4</span>
+          <span class="font-semibold text-sm text-gray-800">Paste Web App URL Here</span>
+        </div>
+        <div class="p-4 space-y-3">
+          <input type="url" id="gs-url-input" placeholder="https://script.google.com/macros/s/…/exec"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+          <div class="flex items-center gap-2">
+            <button onclick="testGSConnection()" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl transition-colors font-medium">🔍 Test Connection</button>
+            <button onclick="syncFromSheets(true)" class="text-sm bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">⬇️ Pull from Sheet</button>
+            <button onclick="syncToSheets(true)" class="text-sm bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">⬆️ Push to Sheet</button>
+          </div>
+          <p id="gs-test-result" class="text-xs text-gray-500 hidden"></p>
+        </div>
+      </div>
+
+      <!-- Sync Options -->
+      <div class="border border-gray-200 rounded-2xl p-4">
+        <p class="text-sm font-semibold text-gray-700 mb-3">⚙️ Sync Options</p>
+        <div class="space-y-2">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" id="gs-auto-save" class="req-cb w-4 h-4 rounded">
+            <span class="text-sm text-gray-700">Auto-push to Sheet on every save</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" id="gs-auto-load" class="req-cb w-4 h-4 rounded">
+            <span class="text-sm text-gray-700">Auto-pull from Sheet on app load</span>
+          </label>
+        </div>
+        <div class="mt-3 text-xs text-gray-400" id="gs-last-sync"></div>
+      </div>
+
+      <!-- LOCAL BACKUP SECTION -->
+      <div class="border border-emerald-200 bg-emerald-50 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 flex items-center justify-between border-b border-emerald-200">
+          <div class="flex items-center gap-2">
+            <span class="text-base">💾</span>
+            <span class="font-semibold text-sm text-emerald-800">Daily Excel Backup</span>
+            <span class="text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-semibold">AUTO</span>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="importBackupJSON()" class="text-xs bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-medium">📂 Restore JSON</button>
+            <button onclick="downloadBackupExcel()" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg font-medium">⬇️ Download Excel</button>
+          </div>
+        </div>
+        <div class="p-4">
+          <p class="text-xs text-emerald-700">Excel file auto-downloaded once daily on first save. Contains all CRM data + call logs. Use "Download Excel" anytime for manual backup.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB: Backup -->
+    <div id="stab-panel-backup" class="hidden p-5 space-y-4 max-h-[65vh] overflow-y-auto">
+      <div class="border border-emerald-200 bg-emerald-50 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 flex items-center justify-between border-b border-emerald-200">
+          <div class="flex items-center gap-2">
+            <span class="text-base">💾</span>
+            <span class="font-semibold text-sm text-emerald-800">Daily Excel Backup</span>
+            <span class="text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-semibold">AUTO</span>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="importBackupJSON()" class="text-xs bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-medium">📂 Restore JSON</button>
+            <button onclick="downloadBackupExcel()" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg font-medium">⬇️ Download Excel</button>
+          </div>
+        </div>
+        <div class="p-4">
+          <p class="text-xs text-emerald-700">Excel file auto-downloaded once daily on first save. Contains all CRM data + call logs.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer (dynamic per tab) -->
+    <div class="flex items-center justify-between p-4 border-t bg-gray-50 rounded-b-2xl" id="settings-footer">
+      <button onclick="clearGSSettings()" class="text-sm text-red-500 hover:text-red-600 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors" id="gs-disconnect-btn">🗑 Disconnect Sheets</button>
+      <div class="flex gap-2">
+        <button onclick="closeSettings()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100">Close</button>
+        <button onclick="saveGSSettings()" class="text-sm bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-xl font-semibold transition-colors" id="gs-save-btn">Save Sync Settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div id="toast-area" class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none" style="width:300px"></div>
+
+<script>
+// ============================================================
+// CONSTANTS
+// ============================================================
+const CAT_COLORS = {
+  'Hot Lead':'bg-blue-100 text-blue-700',
+  'Warm Lead':'bg-yellow-100 text-yellow-700',
+  'Cold Lead':'bg-red-100 text-red-700',
+  'Existing Client':'bg-emerald-100 text-emerald-700',
+  'Inactive':'bg-gray-200 text-gray-600',
+  'Prospect':'bg-orange-100 text-orange-700',
+  'Not Relevant':'bg-gray-100 text-gray-400'
+};
+const FU_COLORS = {
+  'Completed':'bg-emerald-100 text-emerald-700',
+  'Scheduled':'bg-blue-100 text-blue-700',
+  'Pending':'bg-yellow-100 text-yellow-700',
+  'Overdue':'bg-red-100 text-red-700',
+  'On Hold':'bg-gray-200 text-gray-600',
+  'Cancelled':'bg-gray-100 text-gray-400',
+  'Deal Closed':'bg-emerald-200 text-emerald-800',
+  'Lost / Rejected':'bg-red-100 text-red-500'
+};
+const CALL_ICONS = {
+  'Connected - Positive':'✅','Connected - Neutral':'✅','Connected - Negative':'❌',
+  'Not Reachable':'📵','Ringing No Answer':'🔔','Switched Off':'📴',
+  'Call Back Requested':'🔁','Sent to Voicemail':'📩','DND / Refused':'🚫'
+};
+
+// ============================================================
+// STATE
+// ============================================================
+const S = {
+  contacts:[],
+  crm:{},
+  view:'dashboard',
+  filt:{zone:'',city:'',cat:'',fustatus:'',q:'',assignedUser:''},
+  page:1,
+  perPage:50,
+  selIdx:null,
+  curAtt:0
+};
+
+// ============================================================
+// DATA
+// ============================================================
+async function init(){
+  try{
+    // Check localStorage for imported contacts first (overrides JSON file)
+    const savedContacts = localStorage.getItem('contacts_list');
+    if(savedContacts){
+      try{ S.contacts=JSON.parse(savedContacts); }catch(e){ S.contacts=[]; }
+    }
+    if(!S.contacts.length){
+      const r = await fetch('contacts_data.json');
+      if(!r.ok) throw new Error('fetch failed');
+      S.contacts = await r.json();
+    }
+    const saved = localStorage.getItem('crm_v2');
+    if(saved){ try{ S.crm=JSON.parse(saved); }catch(e){S.crm={};} }
+    autoOverdue();
+    document.getElementById('total-count').textContent = S.contacts.length.toLocaleString();
+    renderApp();
+    scheduleNotifs();
+  }catch(e){
+    document.getElementById('loading-screen').innerHTML = `
+      <div class="text-center max-w-sm">
+        <div class="text-5xl mb-4">⚠️</div>
+        <h2 class="text-lg font-bold text-gray-700 mb-2">Server Required</h2>
+        <p class="text-sm text-gray-500 mb-4">This app must be served via HTTP. Run from app folder:</p>
+        <code class="block bg-gray-100 border rounded-xl px-4 py-3 text-sm text-left text-gray-800 mb-4">python -m http.server 8080</code>
+        <p class="text-xs text-gray-400">Then open <strong>http://localhost:8080</strong> in your browser</p>
+        <p class="text-xs text-gray-400 mt-2">Or double-click <strong>start.bat</strong> to launch automatically</p>
+      </div>`;
+  }
+}
+
+function saveAll(){
+  localStorage.setItem('crm_v2', JSON.stringify(S.crm));
+  checkDailyAutoDownload();
+  if(typeof GS !== 'undefined' && GS.url && GS.autoSave) syncToSheets();
+}
+
+function checkDailyAutoDownload(){
+  const today = todayISO();
+  if(localStorage.getItem('crm_last_dl') === today) return;
+  setTimeout(()=>{
+    if(localStorage.getItem('crm_last_dl') === todayISO()) return;
+    // Auto-download as Excel
+    try{
+      const rows = getExportRows();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'CRM Data');
+      XLSX.writeFile(wb, `CRM_Daily_Backup_${todayISO()}.xlsx`);
+      localStorage.setItem('crm_last_dl', todayISO());
+      toast('💾 Daily backup saved to Downloads!','success');
+    }catch(e){}
+  }, 3000);
+}
+
+function startContinuousBackup(){
+  // Save to localStorage on tab hide
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden && Object.keys(S.crm).length > 0){
+      localStorage.setItem('crm_v2', JSON.stringify(S.crm));
+    }
+  });
+  // Save on browser close
+  window.addEventListener('beforeunload', ()=>{
+    if(Object.keys(S.crm).length > 0){
+      localStorage.setItem('crm_v2', JSON.stringify(S.crm));
+    }
+  });
+}
+
+function downloadBackupExcel(){
+  try{
+    const rows = getExportRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'CRM Data');
+    XLSX.writeFile(wb, `CRM_Backup_${todayISO()}.xlsx`);
+    toast('💾 Backup downloaded!','success');
+  }catch(e){ toast('Export failed: '+e.message,'error'); }
+}
+
+function importBackupJSON(){
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try{
+        const obj = JSON.parse(ev.target.result);
+        const crm = obj.crm || obj;
+        if(!confirm('Restore from file "'+f.name+'"?\nCurrent data will be overwritten.')) return;
+        S.crm = crm;
+        saveAll(); renderApp();
+        toast('✅ Backup restored from file!','success');
+      }catch(err){ toast('Invalid backup file','error'); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+function getCrm(i){
+  return S.crm[i] || {
+    notes:'',category:'',callStatus:'',callAttempts:0,
+    requirementType:[],lastContactDate:'',nextFollowUpDate:'',
+    nextFollowUpTime:'',followUpStatus:'',
+    altPhone:'',dnc:false,callLog:[],assignedTo:''
+  };
+}
+
+function autoOverdue(){
+  const now = today0();
+  for(const k in S.crm){
+    const c = S.crm[k];
+    if(c.nextFollowUpDate && c.followUpStatus==='Scheduled'){
+      const d = date0(c.nextFollowUpDate);
+      if(d && d<now) S.crm[k].followUpStatus='Overdue';
+    }
+  }
+  saveAll();
+}
+
+// ============================================================
+// DATE UTILS
+// ============================================================
+function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function date0(s){ if(!s) return null; const d=new Date(s); if(isNaN(d)) return null; d.setHours(0,0,0,0); return d; }
+function todayISO(){ return new Date().toISOString().split('T')[0]; }
+function addDaysISO(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().split('T')[0]; }
+function fmtDate(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
+function isOvd(s){ if(!s) return false; const d=date0(s); return d && d<today0(); }
+function isTdy(s){ if(!s) return false; const d=date0(s); return d && d.getTime()===today0().getTime(); }
+function daysLbl(s){
+  if(!s) return '';
+  const d=date0(s); if(!d) return '';
+  const diff=Math.round((d-today0())/86400000);
+  if(diff===0) return '🔵 Today';
+  if(diff===1) return '⏰ Tomorrow';
+  if(diff===-1) return '📅 Yesterday';
+  if(diff<0) return `🔴 ${-diff}d overdue`;
+  return `📆 in ${diff}d`;
+}
+
+// ============================================================
+// STATS
+// ============================================================
+function stats(){
+  let tod=0,ovd=0,hot=0,dnc=0;
+  const now=today0();
+  const isAdmin=SESSION?.role==='admin';
+  S.contacts.forEach((_,i)=>{
+    const c=getCrm(i);
+    if(!isAdmin && c.assignedTo !== SESSION?.id) return;
+    if(c.nextFollowUpDate){
+      const d=date0(c.nextFollowUpDate);
+      if(d && d.getTime()===now.getTime()) tod++;
+      else if(d && d<now && c.followUpStatus!=='Completed') ovd++;
+    }
+    if(c.category==='Hot Lead') hot++;
+    if(c.dnc) dnc++;
+  });
+  return {tod,ovd,hot,dnc};
+}
+
+function updateBadges(){
+  const s=stats();
+  const setBadge=(id,n)=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.textContent=n;
+    el.classList.toggle('hidden', n===0);
+  };
+  setBadge('today-badge', s.tod);
+  setBadge('overdue-badge', s.ovd);
+  setBadge('hot-badge', s.hot);
+  const myCount=S.contacts.filter((_,i)=>getCrm(i).assignedTo===SESSION?.id).length;
+  setBadge('my-badge', myCount);
+  // total-count always visible
+  const tc=document.getElementById('total-count');
+  if(tc) tc.textContent=S.contacts.length.toLocaleString();
+  const hasPending=s.tod>0||s.ovd>0;
+  document.getElementById('notif-dot').classList.toggle('hidden',!hasPending);
+}
+
+// ============================================================
+// ROUTING
+// ============================================================
+function setView(v){
+  S.view=v; S.page=1;
+  ['dashboard','contacts','today','overdue','hotleads','myleads'].forEach(id=>{
+    const el=document.getElementById('nav-'+id);
+    if(el){
+      el.classList.toggle('active',id===v);
+      el.classList.toggle('top-nav-item',true);
+    }
+  });
+  renderApp();
+}
+
+function jumpZone(z){
+  S.filt.zone=z; S.filt.city=''; S.filt.cat=''; S.filt.fustatus=''; S.filt.assignedUser=''; S.page=1;
+  setView('contacts');
+}
+
+function onSearch(v){ S.filt.q=v; S.page=1; renderApp(); }
+
+function renderApp(){
+  const ls=document.getElementById('loading-screen');
+  if(ls) ls.style.display='none';
+  const m=document.getElementById('main-content');
+  if(S.view==='dashboard') m.innerHTML=renderDash();
+  else m.innerHTML=renderTable();
+  updateBadges();
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDash(){
+  const s=stats();
+  const catC={};
+  let tracked=0;
+  const dashAdmin=SESSION?.role==='admin';
+  S.contacts.forEach((c,i)=>{
+    const cr=getCrm(i);
+    if(!dashAdmin && cr.assignedTo !== SESSION?.id) return;
+    if(Object.keys(S.crm).includes(String(i))) tracked++;
+    if(cr.category) catC[cr.category]=(catC[cr.category]||0)+1;
+  });
+
+  const _isAdmin=SESSION?.role==='admin';
+
+  const todList=S.contacts.map((c,i)=>({c,i,cr:getCrm(i)}))
+    .filter(x=>x.cr.nextFollowUpDate&&isTdy(x.cr.nextFollowUpDate)&&(_isAdmin||x.cr.assignedTo===SESSION?.id)).slice(0,6);
+
+  const recList=Object.entries(S.crm)
+    .filter(([idx,cr])=>cr.lastContactDate&&(_isAdmin||cr.assignedTo===SESSION?.id))
+    .sort((a,b)=>new Date(b[1].lastContactDate)-new Date(a[1].lastContactDate))
+    .slice(0,7);
+
+  const myTotal=dashAdmin?S.contacts.length:S.contacts.filter((_,i)=>getCrm(i).assignedTo===SESSION?.id).length;
+  const pct=myTotal?Math.round(tracked/myTotal*100):0;
+
+  return `<div class="space-y-5">
+  <!-- Header row -->
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Overview</h1>
+      <p class="text-sm text-gray-500 mt-0.5">${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
+    </div>
+    <button onclick="setView('contacts')" class="text-sm bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl transition-colors font-medium">👥 All Contacts</button>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    ${card('📅','Today\'s Tasks',s.tod,'Due today','border-l-blue-400','bg-blue-50 text-blue-700',"setView('today')")}
+    ${card('🔴','Overdue',s.ovd,'Need action','border-l-red-400','bg-red-50 text-red-700',"setView('overdue')")}
+    ${card('🔥','Hot Leads',s.hot,'Priority','border-l-orange-400','bg-orange-50 text-orange-700',"setView('hotleads')")}
+    ${card('🚫','DNC',s.dnc,'Do Not Call','border-l-gray-300','bg-gray-100 text-gray-500',"setView('contacts');setTimeout(()=>{S.filt={zone:'',city:'',cat:'',fustatus:'',q:'',assignedUser:'',dnc:true};renderApp();},100)")}
+  </div>
+
+  <!-- Two-column layout -->
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+    <!-- Left column (wider) -->
+    <div class="xl:col-span-2 space-y-5">
+
+      <!-- Coverage + Categories row -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+          <h3 class="font-semibold text-gray-800 mb-4 text-sm">📊 CRM Coverage</h3>
+          <div class="flex items-center gap-3 mb-3">
+            <div class="text-center"><div class="text-2xl font-bold text-violet-600">${tracked}</div><div class="text-xs text-gray-400 mt-0.5">Tracked</div></div>
+            <div class="flex-1"><div class="bg-gray-100 rounded-full h-2.5"><div class="bg-gradient-to-r from-violet-500 to-indigo-500 h-2.5 rounded-full transition-all" style="width:${pct}%"></div></div></div>
+            <div class="text-center"><div class="text-2xl font-bold text-gray-300">${myTotal-tracked}</div><div class="text-xs text-gray-400 mt-0.5">New</div></div>
+          </div>
+          <p class="text-xs text-gray-400 text-center">${pct}% of ${myTotal.toLocaleString()} contacts tracked</p>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+          <h3 class="font-semibold text-gray-800 mb-3 text-sm">🏷️ Lead Categories</h3>
+          <div class="space-y-2">
+            ${Object.entries(catC).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([cat,n])=>`
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-600 w-28 truncate">${cat}</span>
+              <div class="flex-1 bg-gray-100 rounded-full h-1.5"><div class="bg-violet-400 h-1.5 rounded-full" style="width:${tracked?Math.round(n/tracked*100):0}%"></div></div>
+              <span class="text-xs font-semibold text-gray-500 w-5 text-right">${n}</span>
+            </div>`).join('')}
+            ${!Object.keys(catC).length?'<p class="text-xs text-gray-400 text-center py-3">No categories yet</p>':''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+          <h3 class="font-semibold text-gray-800 text-sm">🕐 Recent Activity</h3>
+          <button onclick="setView('contacts')" class="text-xs text-violet-600 hover:text-violet-700 font-semibold">View all →</button>
+        </div>
+        <div class="divide-y divide-gray-50">
+        ${recList.length===0?`<div class="text-center py-8 text-gray-400"><div class="text-3xl mb-2">📋</div><p class="text-sm">No activity yet</p><p class="text-xs mt-1">Click any contact to start tracking</p></div>`:
+        recList.map(([idx,cr])=>{
+          const c=S.contacts[idx]; if(!c) return '';
+          const initLetter=String(c['COMPANY NAME']||'?')[0].toUpperCase();
+          const avatarColor=cr.category==='Hot Lead'?'bg-orange-100 text-orange-700':cr.category==='Existing Client'?'bg-emerald-100 text-emerald-700':'bg-violet-100 text-violet-700';
+          return `<div class="flex items-center gap-3 px-5 py-3 hover:bg-violet-50/50 cursor-pointer transition-colors" onclick="openModal(${idx})">
+            <div class="w-9 h-9 ${avatarColor} rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0">${initLetter}</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-800 truncate">${esc(c['COMPANY NAME'])}</div>
+              <div class="text-xs text-gray-400 mt-0.5">${CALL_ICONS[cr.callStatus]||''} ${cr.callStatus||'No status'} • ${fmtDate(cr.lastContactDate)}</div>
+            </div>
+            ${cr.category?`<span class="badge ${CAT_COLORS[cr.category]||'bg-gray-100 text-gray-500'} flex-shrink-0">${cr.category}</span>`:''}
+          </div>`;
+        }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel — Today's follow-ups -->
+    <div class="space-y-5">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+          <h3 class="font-semibold text-gray-800 text-sm">📅 Today's Tasks</h3>
+          <div class="flex items-center gap-2">
+            <span class="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-semibold">${s.tod}</span>
+            <button onclick="setView('today')" class="text-xs text-violet-600 hover:text-violet-700 font-semibold">All →</button>
+          </div>
+        </div>
+        <div class="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+        ${todList.length===0?`<div class="text-center py-8 text-gray-400"><div class="text-3xl mb-2">✅</div><p class="text-sm font-medium">All clear!</p><p class="text-xs mt-1">No follow-ups today</p></div>`:
+        todList.map(({c,i,cr})=>`
+        <div class="flex items-center gap-3 px-4 py-3 hover:bg-violet-50/50 cursor-pointer transition-colors" onclick="openModal(${i})">
+          <div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-xs font-bold text-indigo-700 flex-shrink-0">${esc(c['COMPANY NAME']||'?')[0].toUpperCase()}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-semibold text-gray-800 truncate">${esc(c['COMPANY NAME'])}</div>
+            <div class="text-xs text-gray-400 mt-0.5">${cr.nextFollowUpTime||'Anytime'}</div>
+          </div>
+          ${cr.category?`<span class="badge ${CAT_COLORS[cr.category]||'bg-gray-100 text-gray-400'}">${cr.category.replace(' Lead','').replace('Existing ','')}</span>`:''}
+        </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Overdue panel -->
+      ${s.ovd>0?`<div class="bg-red-50 rounded-2xl border border-red-100 p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-red-700 text-sm">🔴 Overdue (${s.ovd})</h3>
+          <button onclick="setView('overdue')" class="text-xs text-red-600 font-semibold">View →</button>
+        </div>
+        <p class="text-xs text-red-500">${s.ovd} contact${s.ovd!==1?'s':''} past due date. Follow up now.</p>
+      </div>`:''}
+
+      <!-- My leads quick stat -->
+      <div class="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-5 text-white">
+        <div class="text-3xl font-bold mb-1">${myTotal.toLocaleString()}</div>
+        <div class="text-violet-200 text-sm font-medium">Total Contacts</div>
+        <div class="mt-3 text-xs text-violet-300">${tracked} tracked · ${pct}% coverage</div>
+      </div>
+    </div>
+
+  </div>
+</div>`;
+}
+
+function card(icon,title,num,sub,border,badge,onclick){
+  return `<div ${onclick?`onclick="${onclick}" style="cursor:pointer"`:''}  class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all border-l-4 ${border} ${onclick?'hover:border-l-violet-400':''}">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-2xl">${icon}</span>
+      ${badge?`<span class="text-xs px-2.5 py-1 rounded-full font-semibold ${badge}">${sub}</span>`:''}
+    </div>
+    <div class="text-3xl font-bold text-gray-900 mb-0.5">${num}</div>
+    <div class="text-sm font-medium text-gray-500">${title}</div>
+  </div>`;
+}
+
+// ============================================================
+// CONTACTS TABLE
+// ============================================================
+function getFiltered(){
+  const isAdmin=SESSION?.role==='admin';
+  return S.contacts.map((c,i)=>({c,i,cr:getCrm(i)})).filter(({c,i,cr})=>{
+    // Non-admin: only see own assigned leads
+    if(!isAdmin && cr.assignedTo !== SESSION?.id) return false;
+    if(S.view==='today') return cr.nextFollowUpDate&&isTdy(cr.nextFollowUpDate);
+    if(S.view==='overdue') return cr.nextFollowUpDate&&isOvd(cr.nextFollowUpDate)&&cr.followUpStatus!=='Completed';
+    if(S.view==='hotleads') return cr.category==='Hot Lead';
+    if(S.view==='myleads') return cr.assignedTo===SESSION?.id;
+    const {zone,city,cat,fustatus,q,assignedUser,dnc}=S.filt;
+    if(dnc&&!cr.dnc) return false;
+    if(zone&&c['ZONE']!==zone) return false;
+    if(city&&c['CITY']!==city) return false;
+    if(cat&&cr.category!==cat) return false;
+    if(fustatus&&cr.followUpStatus!==fustatus) return false;
+    if(assignedUser==='__unassigned__'&&cr.assignedTo) return false;
+    else if(assignedUser&&assignedUser!=='__unassigned__'&&cr.assignedTo!==assignedUser) return false;
+    if(q){
+      const s=q.toLowerCase();
+      if(!String(c['COMPANY NAME']||'').toLowerCase().includes(s)&&
+         !String(c['AUTHORISED PERSON']||'').toLowerCase().includes(s)&&
+         !String(c['PHONE NO']||'').toLowerCase().includes(s)&&
+         !String(c['CITY']||'').toLowerCase().includes(s)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTable(){
+  const data=getFiltered();
+  const total=data.length;
+  const start=(S.page-1)*S.perPage;
+  const rows=data.slice(start,start+S.perPage);
+  const totalPages=Math.max(1,Math.ceil(total/S.perPage));
+  const cities=[...new Set(S.contacts.map(c=>c['CITY']).filter(Boolean))].sort().slice(0,80);
+  const isAdmin=SESSION?.role==='admin';
+  const allUsers=getUsers();
+
+  const viewTitle={today:"📅 Today's Follow-ups",overdue:"🔴 Overdue Follow-ups",hotleads:"🔥 Hot Leads",contacts:"👥 All Contacts",myleads:"🎯 My Leads"};
+
+  return `<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">${viewTitle[S.view]||'Contacts'}</h1>
+      <p class="text-xs text-gray-500 mt-0.5">${total.toLocaleString()} contacts${total!==S.contacts.length?` (filtered from ${S.contacts.length.toLocaleString()})`:''}  </p>
+    </div>
+    ${S.view==='contacts'?`<button onclick="clearFilt()" class="text-xs text-gray-500 hover:text-gray-800 px-3 py-1.5 border rounded-xl hover:bg-gray-50">× Clear Filters</button>`:''}
+  </div>
+
+  ${S.view==='contacts'?`
+  <div class="bg-white rounded-2xl p-4 border shadow-sm">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <select onchange="S.filt.zone=this.value;S.page=1;renderApp()" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+        <option value="">All Zones</option>
+        <option value="EAST" ${S.filt.zone==='EAST'?'selected':''}>🗺️ East</option>
+        <option value="WEST" ${S.filt.zone==='WEST'?'selected':''}>🗺️ West</option>
+        <option value="NORTH" ${S.filt.zone==='NORTH'?'selected':''}>🗺️ North</option>
+        <option value="SOUTH" ${S.filt.zone==='SOUTH'?'selected':''}>🗺️ South</option>
+      </select>
+      <select onchange="S.filt.cat=this.value;S.page=1;renderApp()" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+        <option value="">All Categories</option>
+        <option value="Hot Lead" ${S.filt.cat==='Hot Lead'?'selected':''}>🔵 Hot Lead</option>
+        <option value="Warm Lead" ${S.filt.cat==='Warm Lead'?'selected':''}>🟡 Warm Lead</option>
+        <option value="Cold Lead" ${S.filt.cat==='Cold Lead'?'selected':''}>🔴 Cold Lead</option>
+        <option value="Existing Client" ${S.filt.cat==='Existing Client'?'selected':''}>🟢 Existing Client</option>
+        <option value="Inactive" ${S.filt.cat==='Inactive'?'selected':''}>⚫ Inactive</option>
+        <option value="Prospect" ${S.filt.cat==='Prospect'?'selected':''}>🟠 Prospect</option>
+        <option value="Not Relevant" ${S.filt.cat==='Not Relevant'?'selected':''}>⚪ Not Relevant</option>
+      </select>
+      <select onchange="S.filt.fustatus=this.value;S.page=1;renderApp()" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+        <option value="">All Follow-up Status</option>
+        <option value="Scheduled" ${S.filt.fustatus==='Scheduled'?'selected':''}>🔵 Scheduled</option>
+        <option value="Pending" ${S.filt.fustatus==='Pending'?'selected':''}>🟡 Pending</option>
+        <option value="Overdue" ${S.filt.fustatus==='Overdue'?'selected':''}>🔴 Overdue</option>
+        <option value="Completed" ${S.filt.fustatus==='Completed'?'selected':''}>🟢 Completed</option>
+        <option value="Deal Closed" ${S.filt.fustatus==='Deal Closed'?'selected':''}>✅ Deal Closed</option>
+        <option value="Lost / Rejected" ${S.filt.fustatus==='Lost / Rejected'?'selected':''}>❌ Lost</option>
+      </select>
+      <select onchange="S.filt.city=this.value;S.page=1;renderApp()" class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+        <option value="">All Cities</option>
+        ${cities.map(ci=>`<option value="${esc(ci)}" ${S.filt.city===ci?'selected':''}>${esc(ci)}</option>`).join('')}
+      </select>
+      ${isAdmin?`<select onchange="S.filt.assignedUser=this.value;S.page=1;renderApp()" class="px-3 py-2 border border-violet-200 bg-violet-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+        <option value="">👤 All Assignees</option>
+        <option value="__unassigned__" ${S.filt.assignedUser==='__unassigned__'?'selected':''}>— Unassigned</option>
+        ${allUsers.map(u=>`<option value="${u.id}" ${S.filt.assignedUser===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}
+      </select>`:''}
+    </div>
+  </div>`:'' }
+
+  <div class="bg-white rounded-2xl border shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+          <tr class="text-gray-500 text-xs font-semibold uppercase tracking-wider">
+            <th class="px-4 py-3 text-left w-10">#</th>
+            <th class="px-4 py-3 text-left">Company / Contact</th>
+            <th class="px-4 py-3 text-left">Phone</th>
+            <th class="px-4 py-3 text-left">Zone / City</th>
+            <th class="px-4 py-3 text-left">Category</th>
+            <th class="px-4 py-3 text-left">Call</th>
+            <th class="px-4 py-3 text-left">Next Follow-up</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            ${isAdmin?'<th class="px-4 py-3 text-left">Assigned</th>':''}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${rows.length===0?`<tr><td colspan="${isAdmin?9:8}" class="text-center py-16 text-gray-400"><div class="text-4xl mb-2">🔍</div><p class="text-sm">No contacts found</p></td></tr>`:
+          rows.map(({c,i,cr},ri)=>{
+            const ovd=cr.nextFollowUpDate&&isOvd(cr.nextFollowUpDate)&&cr.followUpStatus!=='Completed';
+            const tdy=cr.nextFollowUpDate&&isTdy(cr.nextFollowUpDate);
+            return `<tr class="contact-row ${ovd?'is-overdue':tdy?'is-today':''}" onclick="openModal(${i})">
+              <td class="px-4 py-3 text-gray-400 text-xs">${start+ri+1}</td>
+              <td class="px-4 py-3 max-w-[240px]">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 ${cr.category==='Hot Lead'?'bg-orange-100 text-orange-700':cr.category==='Existing Client'?'bg-emerald-100 text-emerald-700':cr.dnc?'bg-red-100 text-red-500':'bg-violet-100 text-violet-700'}">${String(c['COMPANY NAME']||'?')[0].toUpperCase()}</div>
+                  <div class="min-w-0">
+                    <div class="font-medium ${cr.dnc?'text-red-400 line-through':'text-gray-900'} truncate leading-tight text-sm">${esc(c['COMPANY NAME']||'')}${cr.dnc?' <span class="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-semibold no-underline" style="text-decoration:none">DNC</span>':''}</div>
+                    <div class="text-xs text-gray-400 truncate mt-0.5">${esc(c['AUTHORISED PERSON']||'')}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">${esc(String(c['PHONE NO']||''))}</td>
+              <td class="px-4 py-3">
+                <div class="text-xs font-semibold text-gray-700">${esc(c['ZONE']||'')}</div>
+                <div class="text-xs text-gray-500 truncate max-w-[90px]">${esc(c['CITY']||'')}</div>
+              </td>
+              <td class="px-4 py-3">
+                ${cr.category?`<span class="badge ${CAT_COLORS[cr.category]||'bg-gray-100 text-gray-500'}">${cr.category}</span>`:'<span class="text-gray-300 text-xs">—</span>'}
+              </td>
+              <td class="px-4 py-3">
+                <div class="text-xs text-gray-600 whitespace-nowrap">${cr.callStatus?(CALL_ICONS[cr.callStatus]||'')+' '+cr.callStatus.replace('Connected - ',''):'—'}</div>
+                ${cr.callAttempts>0?`<div class="text-xs text-gray-400">${cr.callAttempts} calls</div>`:''}
+              </td>
+              <td class="px-4 py-3">
+                ${cr.nextFollowUpDate?`
+                  <div class="text-xs font-medium ${ovd?'text-red-600':tdy?'text-violet-600':'text-gray-700'} whitespace-nowrap">${fmtDate(cr.nextFollowUpDate)}</div>
+                  <div class="text-xs ${ovd?'text-red-400':tdy?'text-violet-400':'text-gray-400'}">${daysLbl(cr.nextFollowUpDate)}</div>
+                `:'<span class="text-gray-300 text-xs">Not set</span>'}
+              </td>
+              <td class="px-4 py-3">
+                ${cr.followUpStatus?`<span class="badge ${FU_COLORS[cr.followUpStatus]||'bg-gray-100 text-gray-500'}">${cr.followUpStatus}</span>`:'<span class="text-gray-300 text-xs">—</span>'}
+              </td>
+              ${isAdmin?`<td class="px-4 py-3">${(()=>{
+                const u=allUsers.find(x=>x.id===cr.assignedTo);
+                return u
+                  ? `<span class="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">${esc(u.name)}</span>`
+                  : '<span class="text-gray-300 text-xs">Unassigned</span>';
+              })()}</td>`:''}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    ${totalPages>1?`
+    <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50 text-xs">
+      <span class="text-gray-500">Showing ${start+1}–${Math.min(start+S.perPage,total)} of ${total.toLocaleString()}</span>
+      <div class="flex items-center gap-1">
+        <button onclick="goPage(1)" ${S.page===1?'disabled':''} class="px-2.5 py-1 border rounded-lg disabled:opacity-30 hover:bg-gray-100">«</button>
+        <button onclick="goPage(${S.page-1})" ${S.page===1?'disabled':''} class="px-2.5 py-1 border rounded-lg disabled:opacity-30 hover:bg-gray-100">‹</button>
+        ${pageNums(S.page,totalPages).map(p=>`<button onclick="goPage(${p})" class="px-2.5 py-1 border rounded-lg ${p===S.page?'bg-violet-500 text-white border-violet-500':'hover:bg-violet-50'}">${p}</button>`).join('')}
+        <button onclick="goPage(${S.page+1})" ${S.page===totalPages?'disabled':''} class="px-2.5 py-1 border rounded-lg disabled:opacity-30 hover:bg-gray-100">›</button>
+        <button onclick="goPage(${totalPages})" ${S.page===totalPages?'disabled':''} class="px-2.5 py-1 border rounded-lg disabled:opacity-30 hover:bg-gray-100">»</button>
+      </div>
+    </div>`:'' }
+  </div>
+</div>`;
+}
+
+function pageNums(cur,total){
+  let nums=[],start=Math.max(1,cur-2),end=Math.min(total,cur+2);
+  if(cur<=3){end=Math.min(total,5);}
+  if(cur>=total-2){start=Math.max(1,total-4);}
+  for(let i=start;i<=end;i++) nums.push(i);
+  return nums;
+}
+
+function goPage(p){
+  const tot=Math.ceil(getFiltered().length/S.perPage);
+  S.page=Math.max(1,Math.min(p,tot));
+  renderApp();
+  window.scrollTo(0,0);
+}
+
+function clearFilt(){
+  S.filt={zone:'',city:'',cat:'',fustatus:'',q:S.filt.q,assignedUser:'',dnc:false};
+  S.page=1; renderApp();
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function openModal(idx){
+  S.selIdx=idx;
+  const c=S.contacts[idx], cr=getCrm(idx);
+  document.getElementById('m-company').textContent=c['COMPANY NAME']||'';
+  document.getElementById('m-subinfo').textContent=[c['AUTHORISED PERSON'],c['PHONE NO'],c['CITY']].filter(Boolean).join(' • ');
+  document.getElementById('m-zone-badge').textContent=c['ZONE']||'';
+  document.getElementById('m-panel').textContent=c['PANEL']||'—';
+  document.getElementById('m-email').textContent=c['REGISTERED EMAIL ID']||'—';
+  document.getElementById('m-state').textContent=c['STATE']||'—';
+  document.getElementById('m-address').textContent=[c['ADDRESS LINE 1'],c['ADDRESS LINE 2']].filter(Boolean).join(', ')||'—';
+  const phone=String(c['PHONE NO']||'').replace(/[^\d+]/g,'');
+
+  document.getElementById('f-notes').value=cr.notes||'';
+  document.getElementById('char-count').textContent=(cr.notes||'').length;
+  document.getElementById('f-category').value=cr.category||'';
+  document.getElementById('f-callstatus').value=cr.callStatus||'';
+  S.curAtt=cr.callAttempts||0;
+  const td=todayISO();
+  document.getElementById('f-lastdate').max=td;
+  document.getElementById('f-lastdate').value=cr.lastContactDate||'';
+  document.getElementById('f-nextdate').min=td;
+  document.getElementById('f-nextdate').value=cr.nextFollowUpDate||'';
+  document.getElementById('f-nexttime').value=cr.nextFollowUpTime||'';
+  document.getElementById('f-fustatus').value=cr.followUpStatus||'';
+  // Alt phone
+  document.getElementById('f-altphone').value=cr.altPhone||'';
+  // DNC toggle
+  const dncBtn=document.getElementById('dnc-btn');
+  dncBtn.className=cr.dnc
+    ? 'text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors bg-red-500 text-white border-red-500'
+    : 'text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors bg-transparent text-slate-300 border-slate-500 hover:border-red-400 hover:text-red-300';
+  dncBtn.textContent=cr.dnc?'🚫 DNC ON':'🚫 DNC';
+  // WhatsApp link (primary phone)
+  const waPhone=String(c['PHONE NO']||'').replace(/[^\d]/g,'');
+  document.getElementById('m-wa-link').href=waPhone?`https://wa.me/91${waPhone}`:'#';
+  // Call history
+  renderCallLog(cr.callLog||[]);
+  updLastAgo();
+  // Populate assign-to dropdown (admin only)
+  const assignSel=document.getElementById('f-assignto');
+  assignSel.innerHTML='<option value="">— Unassigned —</option>';
+  getUsers().forEach(u=>{
+    const opt=document.createElement('option');
+    opt.value=u.id; opt.textContent=u.name+(u.role==='admin'?' (Admin)':'');
+    if(cr.assignedTo===u.id) opt.selected=true;
+    assignSel.appendChild(opt);
+  });
+  const assignedLbl=document.getElementById('assigned-lbl');
+  if(cr.assignedTo){
+    const u=getUsers().find(x=>x.id===cr.assignedTo);
+    assignedLbl.textContent=u?'Currently: '+u.name:'Currently: Unknown user';
+  } else {
+    assignedLbl.textContent='Not assigned to anyone';
+  }
+  document.getElementById('contact-modal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
+}
+
+function closeModal(){
+  document.getElementById('contact-modal').classList.add('hidden');
+  document.body.style.overflow='';
+  S.selIdx=null;
+}
+
+function closeModalBackdrop(e){
+  if(e.target===document.getElementById('contact-modal')) closeModal();
+}
+
+function saveModal(){
+  if(S.selIdx===null) return;
+  const isAdmin=SESSION?.role==='admin';
+  const prev=S.crm[S.selIdx]||{};
+  const callLog=prev.callLog||[];
+  S.crm[S.selIdx]={
+    notes:document.getElementById('f-notes').value,
+    category:document.getElementById('f-category').value,
+    callStatus:document.getElementById('f-callstatus').value,
+    callAttempts:callLog.length, // auto-derived from log
+    lastContactDate:document.getElementById('f-lastdate').value,
+    nextFollowUpDate:document.getElementById('f-nextdate').value,
+    nextFollowUpTime:document.getElementById('f-nexttime').value,
+    followUpStatus:document.getElementById('f-fustatus').value,
+    altPhone:document.getElementById('f-altphone').value.trim(),
+    dnc:prev.dnc||false,
+    callLog:callLog,
+    assignedTo: isAdmin ? (document.getElementById('f-assignto').value||'') : (prev.assignedTo||'')
+  };
+  saveAll();
+  closeModal();
+  toast('✅ Contact saved!','success');
+  renderApp();
+  scheduleNotifs();
+}
+
+function logCall(){
+  document.getElementById('f-lastdate').value=todayISO();
+  updLastAgo();
+  if(S.selIdx!==null){
+    if(!S.crm[S.selIdx]) S.crm[S.selIdx]={};
+    if(!Array.isArray(S.crm[S.selIdx].callLog)) S.crm[S.selIdx].callLog=[];
+    const status=document.getElementById('f-callstatus').value;
+    const notes=document.getElementById('f-notes').value;
+    const now=new Date();
+    S.crm[S.selIdx].callLog.unshift({
+      date:todayISO(),
+      time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+      status:status||'',
+      notes:notes||''
+    });
+    renderCallLog(S.crm[S.selIdx].callLog);
+  }
+  toast('📞 Call logged — set status & save','info');
+}
+
+function renderCallLog(log){
+  const box=document.getElementById('call-log-box');
+  const lbl=document.getElementById('log-count-lbl');
+  const badge=document.getElementById('call-count-badge');
+  if(!log||!log.length){
+    box.innerHTML='<p class="text-gray-400 text-center py-4">No calls logged yet</p>';
+    lbl.textContent='';
+    if(badge){ badge.classList.add('hidden'); }
+    return;
+  }
+  lbl.textContent=log.length+' call'+(log.length!==1?'s':'');
+  if(badge){ badge.textContent=log.length; badge.classList.remove('hidden'); }
+  box.innerHTML=log.map(e=>`
+    <div class="px-3 py-2 border-b border-gray-100 last:border-0">
+      <div class="flex items-center justify-between mb-0.5">
+        <span class="font-semibold text-gray-700">${fmtDate(e.date)} ${e.time||''}</span>
+        ${e.status?`<span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full">${e.status.replace('Connected - ','')}</span>`:''}
+      </div>
+      ${e.notes?`<div class="text-gray-500 truncate">${esc(e.notes)}</div>`:''}
+    </div>`).join('');
+}
+
+function toggleDNC(){
+  if(S.selIdx===null) return;
+  if(!S.crm[S.selIdx]) S.crm[S.selIdx]={};
+  const current=S.crm[S.selIdx].dnc||false;
+  S.crm[S.selIdx].dnc=!current;
+  const dncBtn=document.getElementById('dnc-btn');
+  dncBtn.className=!current
+    ? 'text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors bg-red-500 text-white border-red-500'
+    : 'text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors bg-transparent text-slate-300 border-slate-500 hover:border-red-400 hover:text-red-300';
+  dncBtn.textContent=!current?'🚫 DNC ON':'🚫 DNC';
+  toast(!current?'🚫 Marked as Do Not Call':'✅ DNC removed','info');
+}
+
+function openWA(inputId){
+  const num=document.getElementById(inputId).value.replace(/[^\d]/g,'');
+  if(!num){ toast('Enter phone number first','error'); return false; }
+  window.open('https://wa.me/91'+num,'_blank');
+  return false;
+}
+
+// ============================================================
+// MODAL HELPERS
+// ============================================================
+function setToday(id){ document.getElementById(id).value=todayISO(); }
+function addDaysInput(extra){ document.getElementById('f-nextdate').value=addDaysISO(1+extra); autoSchedule(); }
+function autoSchedule(){ if(document.getElementById('f-nextdate').value&&!document.getElementById('f-fustatus').value) document.getElementById('f-fustatus').value='Scheduled'; }
+function updLastAgo(){
+  const v=document.getElementById('f-lastdate').value;
+  const el=document.getElementById('last-ago');
+  if(!v){el.textContent='';return;}
+  const d=date0(v); if(!d){el.textContent='';return;}
+  const diff=Math.round((today0()-d)/86400000);
+  el.textContent=diff===0?'Today':diff===1?'1 day ago':diff>1?`${diff} days ago`:'Future date';
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+async function enableNotifications(){
+  if(!('Notification' in window)){toast('Browser does not support notifications','error');return;}
+  const p=await Notification.requestPermission();
+  if(p==='granted'){
+    document.getElementById('notif-btn').textContent='✅ Notifications On';
+    toast('🔔 Notifications enabled!','success');
+    scheduleNotifs();
+  } else {
+    toast('Notification permission denied','error');
+  }
+}
+
+function scheduleNotifs(){
+  if(typeof Notification==='undefined'||Notification.permission!=='granted') return;
+  const now=new Date();
+  S.contacts.forEach((c,i)=>{
+    const cr=getCrm(i);
+    if(!cr.nextFollowUpDate) return;
+    const d=new Date(cr.nextFollowUpDate);
+    if(cr.nextFollowUpTime){const[h,m]=cr.nextFollowUpTime.split(':');d.setHours(+h,+m,0,0);}
+    else d.setHours(9,0,0,0);
+    const diff=d-now;
+    if(diff>0&&diff<=86400000){
+      setTimeout(()=>{
+        new Notification('📅 Follow-up Reminder',{
+          body:`${c['COMPANY NAME']} — ${cr.notes?cr.notes.slice(0,80):'Follow-up due'}`,
+          tag:`fu-${i}`
+        });
+      },diff);
+    }
+  });
+}
+
+function toggleNotifPanel(){
+  const p=document.getElementById('notif-panel');
+  p.classList.toggle('hidden');
+  if(!p.classList.contains('hidden')){
+    const upcoming=S.contacts.map((c,i)=>({c,i,cr:getCrm(i)}))
+      .filter(x=>x.cr.nextFollowUpDate&&!isOvd(x.cr.nextFollowUpDate)&&x.cr.followUpStatus!=='Completed')
+      .sort((a,b)=>new Date(a.cr.nextFollowUpDate)-new Date(b.cr.nextFollowUpDate))
+      .slice(0,12);
+    document.getElementById('notif-list').innerHTML=upcoming.length===0
+      ?'<p class="text-xs text-gray-400 text-center py-4">No upcoming follow-ups</p>'
+      :upcoming.map(({c,i,cr})=>`
+      <div class="flex items-center gap-2 p-2.5 hover:bg-gray-50 cursor-pointer" onclick="openModal(${i});toggleNotifPanel()">
+        <span class="text-base">${isTdy(cr.nextFollowUpDate)?'🔵':'📆'}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-medium text-gray-800 truncate">${esc(c['COMPANY NAME'])}</div>
+          <div class="text-xs text-gray-400">${fmtDate(cr.nextFollowUpDate)}${cr.nextFollowUpTime?' '+cr.nextFollowUpTime:''}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function getExportRows(){
+  return S.contacts.map((c,i)=>{
+    const cr=getCrm(i);
+    return {
+      'COMPANY NAME':c['COMPANY NAME']||'','AUTHORISED PERSON':c['AUTHORISED PERSON']||'',
+      'PHONE NO':String(c['PHONE NO']||''),'EMAIL':c['REGISTERED EMAIL ID']||'',
+      'CITY':c['CITY']||'','STATE':c['STATE']||'','ZONE':c['ZONE']||'','PANEL':c['PANEL']||'',
+      'PIN CODE':String(c['PIN CODE']||''),'ADDRESS':([c['ADDRESS LINE 1'],c['ADDRESS LINE 2']].filter(Boolean).join(', ')),
+      'ALT PHONE':cr.altPhone||'','DNC':cr.dnc?'YES':'',
+      'NOTES':cr.notes||'','CATEGORY':cr.category||'','CALL STATUS':cr.callStatus||'',
+      'CALL ATTEMPTS':cr.callAttempts||0,
+      'REQUIREMENT TYPE':(cr.requirementType||[]).join(', '),
+      'LAST CONTACT':cr.lastContactDate?fmtDate(cr.lastContactDate):'',
+      'NEXT FOLLOW-UP':cr.nextFollowUpDate?fmtDate(cr.nextFollowUpDate):'',
+      'FOLLOW-UP TIME':cr.nextFollowUpTime||'','FOLLOW-UP STATUS':cr.followUpStatus||'',
+      'CALL LOG ENTRIES':(cr.callLog||[]).length,
+      'LAST CALL OUTCOME':(cr.callLog&&cr.callLog[0])?cr.callLog[0].status:''
+    };
+  });
+}
+
+// CRM fields definition for mapper
+const CRM_FIELDS = [
+  { key:'COMPANY NAME',       label:'Company Name',       required:true  },
+  { key:'AUTHORISED PERSON',  label:'Authorised Person',  required:false },
+  { key:'PHONE NO',           label:'Phone Number',       required:false },
+  { key:'REGISTERED EMAIL ID',label:'Email ID',           required:false },
+  { key:'CITY',               label:'City',               required:false },
+  { key:'PANEL',              label:'Panel / Type',       required:false },
+  { key:'ADDRESS LINE 1',     label:'Address Line 1',     required:false },
+  { key:'ADDRESS LINE 2',     label:'Address Line 2',     required:false },
+  { key:'STATE',              label:'State',              required:false },
+  { key:'PIN CODE',           label:'Pin Code',           required:false },
+  { key:'ZONE',               label:'Zone',               required:false },
+];
+
+// Auto-guess mapping: file header → CRM field key
+const GUESS_MAP = {
+  'COMPANY NAME':'COMPANY NAME','COMPANY':'COMPANY NAME','FIRM NAME':'COMPANY NAME','NAME':'COMPANY NAME','BUSINESS NAME':'COMPANY NAME',
+  'AUTHORISED PERSON':'AUTHORISED PERSON','CONTACT PERSON':'AUTHORISED PERSON','PERSON':'AUTHORISED PERSON','OWNER':'AUTHORISED PERSON','CONTACT NAME':'AUTHORISED PERSON',
+  'PHONE NO':'PHONE NO','PHONE':'PHONE NO','MOBILE':'PHONE NO','MOBILE NO':'PHONE NO','CONTACT NO':'PHONE NO','PHONE NUMBER':'PHONE NO','MOBILE NUMBER':'PHONE NO',
+  'REGISTERED EMAIL ID':'REGISTERED EMAIL ID','EMAIL':'REGISTERED EMAIL ID','EMAIL ID':'REGISTERED EMAIL ID','EMAIL ADDRESS':'REGISTERED EMAIL ID',
+  'CITY':'CITY','TOWN':'CITY',
+  'PANEL':'PANEL','PANEL TYPE':'PANEL','CATEGORY TYPE':'PANEL','TYPE':'PANEL',
+  'ADDRESS LINE 1':'ADDRESS LINE 1','ADDRESS1':'ADDRESS LINE 1','ADDRESS':'ADDRESS LINE 1',
+  'ADDRESS LINE 2':'ADDRESS LINE 2','ADDRESS2':'ADDRESS LINE 2',
+  'STATE':'STATE','PROVINCE':'STATE',
+  'PIN CODE':'PIN CODE','PINCODE':'PIN CODE','ZIP':'PIN CODE','ZIP CODE':'PIN CODE','POSTAL CODE':'PIN CODE',
+  'ZONE':'ZONE','REGION':'ZONE',
+};
+
+let _importRows = []; // raw rows from file (array of objects with original headers)
+let _fileHeaders = []; // original column headers from file
+
+function importExcel(input){
+  const file = input.files[0];
+  if(!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      _importRows = XLSX.utils.sheet_to_json(ws, {defval:''});
+      if(!_importRows.length){ toast('No data found in file','error'); return; }
+      _fileHeaders = Object.keys(_importRows[0]);
+      openMapper(file.name, _importRows.length);
+    }catch(err){
+      toast('Could not read file: '+err.message,'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function downloadTemplate(){
+  const headers = CRM_FIELDS.map(f => f.key);
+  const sample = {
+    'COMPANY NAME':'ABC Jewellers Pvt. Ltd.',
+    'AUTHORISED PERSON':'Mr. Ramesh Sharma',
+    'PHONE NO':'98765-43210',
+    'REGISTERED EMAIL ID':'ramesh@abcjewellers.com',
+    'CITY':'MUMBAI',
+    'PANEL':'MEDIUM RETAILER',
+    'ADDRESS LINE 1':'Shop No. 5, Ground Floor',
+    'ADDRESS LINE 2':'Zaveri Bazaar, Kalbadevi',
+    'STATE':'MAHARASHTRA',
+    'PIN CODE':'400002',
+    'ZONE':'WEST'
+  };
+  const ws = XLSX.utils.json_to_sheet([sample, {}], {header: headers});
+  // Style header row width
+  ws['!cols'] = [30,25,18,35,15,30,40,40,20,12,12].map(w=>({wch:w}));
+  // Add a note row at the top using sheet_add_aoa
+  XLSX.utils.sheet_add_aoa(ws, [
+    ['← Fill your data below this row. Do NOT change the column headers. Delete this instruction row before uploading.']
+  ], {origin: 'A3'});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+  XLSX.writeFile(wb, 'CRM_Upload_Template.xlsx');
+  toast('📋 Template downloaded! Fill it and upload.', 'success');
+}
+
+function openMapper(filename, rowCount){
+  // Hide tip box, show file info
+  document.getElementById('mapper-info-box').classList.add('hidden');
+  document.getElementById('mapper-upload-info').classList.remove('hidden');
+  document.getElementById('mapper-file-info').textContent =
+    `"${filename}" — ${rowCount} rows detected. Confirm column mapping below:`;
+  document.getElementById('do-import-btn').removeAttribute('disabled');
+
+  const container = document.getElementById('mapper-fields');
+  const opts = ['— Skip this field —', ..._fileHeaders];
+
+  container.innerHTML = CRM_FIELDS.map(f => {
+    const guess = _fileHeaders.find(h => GUESS_MAP[h.trim().toUpperCase()] === f.key) || '';
+    const selectOpts = opts.map(o =>
+      `<option value="${esc(o)}" ${o===guess?'selected':''}>${esc(o)}</option>`
+    ).join('');
+    return `
+    <div class="bg-gray-50 border border-gray-200 rounded-xl p-3">
+      <div class="flex items-center gap-1.5 mb-1.5">
+        <span class="text-xs font-semibold text-gray-700">${f.label}</span>
+        ${f.required?'<span class="text-xs text-red-500 font-bold">*</span>':'<span class="text-xs text-gray-400">(optional)</span>'}
+      </div>
+      <select id="map-${f.key.replace(/ /g,'_')}"
+        class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white">
+        ${selectOpts}
+      </select>
+      ${guess?`<div class="text-xs text-violet-500 mt-1">✓ Auto-matched: "${esc(guess)}"</div>`:'<div class="text-xs text-gray-400 mt-1">Not found — select manually</div>'}
+    </div>`;
+  }).join('');
+
+  document.getElementById('mapper-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function openMapperEmpty(){
+  // Open mapper without a file — show tip + template prompt only
+  document.getElementById('mapper-info-box').classList.remove('hidden');
+  document.getElementById('mapper-upload-info').classList.add('hidden');
+  document.getElementById('mapper-fields').innerHTML = '';
+  document.getElementById('do-import-btn').setAttribute('disabled','');
+  document.getElementById('mapper-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeMapper(){
+  document.getElementById('mapper-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function runMappedImport(){
+  // Build mapping: CRM field key → file header (or '' to skip)
+  const mapping = {};
+  CRM_FIELDS.forEach(f => {
+    const sel = document.getElementById('map-'+f.key.replace(/ /g,'_'));
+    const val = sel ? sel.value : '';
+    if(val && val !== '— Skip this field —') mapping[f.key] = val;
+  });
+
+  if(!mapping['COMPANY NAME'] && !mapping['PHONE NO']){
+    toast('Map at least Company Name or Phone Number','error'); return;
+  }
+
+  // Convert rows using mapping
+  const mapped = _importRows.map(r => {
+    const out = {};
+    for(const crmKey in mapping){
+      const fileCol = mapping[crmKey];
+      out[crmKey] = String(r[fileCol]||'').trim();
+    }
+    return out;
+  }).filter(r => r['COMPANY NAME'] || r['PHONE NO']);
+
+  if(!mapped.length){ toast('No valid rows after mapping','error'); return; }
+
+  // Deduplicate
+  const exPhones = new Set(S.contacts.map(c=>String(c['PHONE NO']||'').replace(/\D/g,'')).filter(Boolean));
+  const exNames  = new Set(S.contacts.map(c=>String(c['COMPANY NAME']||'').toLowerCase().trim()).filter(Boolean));
+  let added=0, skipped=0;
+  for(const row of mapped){
+    const ph = String(row['PHONE NO']||'').replace(/\D/g,'');
+    const nm = String(row['COMPANY NAME']||'').toLowerCase().trim();
+    if((ph&&exPhones.has(ph))||(nm&&exNames.has(nm))){ skipped++; continue; }
+    S.contacts.push(row);
+    if(ph) exPhones.add(ph);
+    if(nm) exNames.add(nm);
+    added++;
+  }
+
+  localStorage.setItem('contacts_list', JSON.stringify(S.contacts));
+  document.getElementById('total-count').textContent = S.contacts.length.toLocaleString();
+  closeMapper();
+  toast(`✅ ${added} contacts imported${skipped?' · '+skipped+' duplicates skipped':''}`, 'success');
+  renderApp();
+}
+
+function exportExcel(){
+  toast('📊 Preparing Excel…','info');
+  setTimeout(()=>{
+    const ws=XLSX.utils.json_to_sheet(getExportRows());
+    ws['!cols']=[30,25,15,35,15,20,10,30,10,50,60,20,25,12,15,40,18,20,12,22,15].map(w=>({wch:w}));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'CRM Data');
+    XLSX.writeFile(wb,`CRM_Export_${todayISO()}.xlsx`);
+    toast('✅ Excel exported!','success');
+  },100);
+}
+
+function exportPDF(){
+  toast('📄 Preparing PDF…','info');
+  setTimeout(()=>{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
+    doc.setFontSize(13);
+    doc.text('CRM Contact Report',14,14);
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}  |  Total contacts: ${S.contacts.length}`,14,20);
+    const cols=['COMPANY NAME','AUTHORISED PERSON','PHONE NO','CITY','ZONE','CATEGORY','CALL STATUS','NEXT FOLLOW-UP','STATUS','PROB%'];
+    const rows=getExportRows().map(r=>cols.map(k=>String(r[k]||r['FOLLOW-UP STATUS']||r['DEAL PROBABILITY %']||r[k]||'')));
+    // Fix column mapping for PDF
+    const pdfRows=getExportRows().map(r=>[
+      r['COMPANY NAME'],r['AUTHORISED PERSON'],r['PHONE NO'],r['CITY'],r['ZONE'],
+      r['CATEGORY'],r['CALL STATUS'],r['NEXT FOLLOW-UP'],r['FOLLOW-UP STATUS'],
+      r['DEAL PROBABILITY %']?r['DEAL PROBABILITY %']+'%':''
+    ]);
+    doc.autoTable({
+      startY:24,
+      head:[['Company','Person','Phone','City','Zone','Category','Call Status','Next Follow-up','FU Status','Prob.']],
+      body:pdfRows,
+      styles:{fontSize:6.5,cellPadding:1.5,overflow:'ellipsize'},
+      headStyles:{fillColor:[30,41,59],textColor:255,fontStyle:'bold',fontSize:7},
+      alternateRowStyles:{fillColor:[248,250,252]},
+      columnStyles:{0:{cellWidth:42},1:{cellWidth:28},2:{cellWidth:22}}
+    });
+    doc.save(`CRM_Report_${todayISO()}.pdf`);
+    toast('✅ PDF exported!','success');
+  },100);
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function toast(msg,type='info'){
+  const colors={success:'bg-emerald-500',error:'bg-red-500',info:'bg-blue-500',warning:'bg-amber-500'};
+  const el=document.createElement('div');
+  el.className=`toast pointer-events-auto ${colors[type]||'bg-gray-800'} text-white px-4 py-3 rounded-xl shadow-lg text-sm`;
+  el.textContent=msg;
+  document.getElementById('toast-area').appendChild(el);
+  setTimeout(()=>{el.style.transition='all .3s ease';el.style.opacity='0';el.style.transform='translateX(110%)';setTimeout(()=>el.remove(),300);},3200);
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeModal();
+  if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)){ e.preventDefault(); document.getElementById('global-search').focus(); }
+});
+
+// ============================================================
+// GOOGLE SHEETS SYNC
+// ============================================================
+const GS = { url:'', autoSave:false, autoLoad:false, lastSync:'' };
+
+function loadGSSettings(){
+  const s = localStorage.getItem('gs_settings');
+  if(s){ try{ Object.assign(GS, JSON.parse(s)); }catch(e){} }
+  updateGSDot();
+}
+
+function saveGSSettings(){
+  GS.url = document.getElementById('gs-url-input').value.trim();
+  GS.autoSave = document.getElementById('gs-auto-save').checked;
+  GS.autoLoad = document.getElementById('gs-auto-load').checked;
+  if(!GS.url){ toast('Paste the Web App URL first','error'); return; }
+  localStorage.setItem('gs_settings', JSON.stringify(GS));
+  updateGSDot();
+  closeSettings();
+  toast('✅ Google Sheets settings saved!','success');
+}
+
+function clearGSSettings(){
+  Object.assign(GS, {url:'',autoSave:false,autoLoad:false,lastSync:''});
+  localStorage.removeItem('gs_settings');
+  updateGSDot();
+  closeSettings();
+  toast('Google Sheets disconnected','info');
+}
+
+function updateGSDot(){
+  document.getElementById('gs-dot').classList.toggle('hidden', !GS.url);
+}
+
+function openSettings(tab='import'){
+  loadGSSettings();
+  document.getElementById('gs-url-input').value = GS.url;
+  document.getElementById('gs-auto-save').checked = GS.autoSave;
+  document.getElementById('gs-auto-load').checked = GS.autoLoad;
+  const badge = document.getElementById('gs-status-badge');
+  badge.textContent = GS.url ? '🟢 Connected' : 'Not configured';
+  badge.className = GS.url
+    ? 'text-xs px-3 py-1 rounded-full font-semibold bg-green-500/30 text-white'
+    : 'text-xs px-3 py-1 rounded-full font-semibold bg-white/20 text-white';
+  const lsEl = document.getElementById('gs-last-sync');
+  lsEl.textContent = GS.lastSync ? 'Last synced: ' + new Date(GS.lastSync).toLocaleString('en-IN') : '';
+  document.getElementById('gs-test-result').classList.add('hidden');
+  document.getElementById('gs-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  switchSettingsTab(tab);
+}
+
+function switchSettingsTab(tab){
+  const tabs = ['import','users','sync','backup'];
+  tabs.forEach(t=>{
+    const btn = document.getElementById('stab-'+t);
+    const panel = document.getElementById('stab-panel-'+t);
+    if(!btn||!panel) return;
+    const active = t===tab;
+    btn.className = active
+      ? 'settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-violet-600 text-violet-700 -mb-px'
+      : 'settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px';
+    panel.classList.toggle('hidden', !active);
+  });
+  // Show/hide sync-specific footer buttons
+  const saveBtn = document.getElementById('gs-save-btn');
+  const discBtn = document.getElementById('gs-disconnect-btn');
+  if(saveBtn) saveBtn.classList.toggle('hidden', tab!=='sync');
+  if(discBtn) discBtn.classList.toggle('hidden', tab!=='sync');
+  // Render users list when switching to users tab
+  if(tab==='users') renderUsersList();
+}
+
+
+function closeSettings(){
+  document.getElementById('gs-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+async function testGSConnection(){
+  const url = document.getElementById('gs-url-input').value.trim();
+  if(!url){ toast('Paste URL first','error'); return; }
+  const el = document.getElementById('gs-test-result');
+  el.textContent = '⏳ Testing…'; el.className = 'text-xs text-gray-500';  el.classList.remove('hidden');
+  try{
+    const r = await fetch(url, {redirect:'follow'});
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    el.textContent = '✅ Connection successful! Sheet is ready.';
+    el.className = 'text-xs text-green-600';
+  }catch(e){
+    el.textContent = '❌ Failed: ' + e.message + ' — check URL and deployment settings.';
+    el.className = 'text-xs text-red-500';
+  }
+}
+
+async function syncToSheets(manual=false){
+  if(!GS.url) return;
+  // Build payload — include company name for reference
+  const payload = {};
+  for(const idx in S.crm){
+    const c = S.contacts[idx];
+    payload[idx] = { ...S.crm[idx], companyName: c ? (c['COMPANY NAME']||'') : '' };
+  }
+  try{
+    await fetch(GS.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain'}, // avoid CORS preflight
+      body: JSON.stringify({crm: payload}),
+      redirect:'follow'
+    });
+    GS.lastSync = new Date().toISOString();
+    localStorage.setItem('gs_settings', JSON.stringify(GS));
+    if(manual){ toast('⬆️ Pushed to Google Sheet!','success'); openSettings(); }
+  }catch(e){
+    if(manual) toast('Sync failed: '+e.message,'error');
+  }
+}
+
+async function syncFromSheets(manual=false){
+  if(!GS.url) return;
+  try{
+    if(manual) toast('⬇️ Pulling from Google Sheet…','info');
+    const r = await fetch(GS.url+'?action=get', {redirect:'follow'});
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    if(d.crm && Object.keys(d.crm).length){
+      // Merge: sheet wins, keep local keys not in sheet
+      for(const idx in d.crm){
+        const row = d.crm[idx];
+        // parse number fields
+        row.callAttempts = parseInt(row.callAttempts)||0;
+        row.interestLevel = parseInt(row.interestLevel)||0;
+        row.dealProbability = parseInt(row.dealProbability)||0;
+        if(!Array.isArray(row.requirementType)) row.requirementType=[];
+        S.crm[idx] = row;
+      }
+      saveAll();
+      GS.lastSync = new Date().toISOString();
+      localStorage.setItem('gs_settings', JSON.stringify(GS));
+      if(manual){ toast('✅ Pulled '+Object.keys(d.crm).length+' records from Sheet','success'); renderApp(); }
+    } else {
+      if(manual) toast('Sheet is empty — nothing to pull','info');
+    }
+  }catch(e){
+    if(manual) toast('Pull failed: '+e.message,'error');
+  }
+}
+
+function copyScript(){
+  const code = document.getElementById('apps-script-code').textContent;
+  navigator.clipboard.writeText(code).then(()=>toast('📋 Script copied!','success'));
+}
+
+// GS auto-sync is called inside saveAll() directly — see saveAll() definition above
+
+// ============================================================
+// AUTH — USERS & ROLES
+// ============================================================
+const DEFAULT_USERS = [
+  { id:'1', name:'Admin', username:'admin', password:'admin@123', role:'admin' }
+];
+
+let SESSION = null; // { id, name, username, role }
+
+function getUsers(){
+  try{ return JSON.parse(localStorage.getItem('crm_users')||'null') || DEFAULT_USERS; }
+  catch(e){ return DEFAULT_USERS; }
+}
+
+function saveUsers(users){ localStorage.setItem('crm_users', JSON.stringify(users)); }
+
+function doLogin(){
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value;
+  const users = getUsers();
+  const match = users.find(x => x.username.toLowerCase()===u.toLowerCase() && x.password===p);
+  if(!match){
+    const el = document.getElementById('login-error');
+    el.textContent = 'Invalid username or password.';
+    el.classList.remove('hidden');
+    document.getElementById('login-pass').value='';
+    return;
+  }
+  SESSION = { id:match.id, name:match.name, username:match.username, role:match.role };
+  sessionStorage.setItem('crm_session', JSON.stringify(SESSION));
+  document.getElementById('login-screen').classList.add('hidden');
+  applyRoleUI();
+  updateHeaderUser();
+  renderApp();
+}
+
+function doLogout(){
+  if(!confirm('Logout?')) return;
+  SESSION = null;
+  sessionStorage.removeItem('crm_session');
+  document.getElementById('login-user').value='';
+  document.getElementById('login-pass').value='';
+  document.getElementById('login-error').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+}
+
+function checkSession(){
+  try{
+    const s = sessionStorage.getItem('crm_session');
+    if(s){ SESSION = JSON.parse(s); return true; }
+  }catch(e){}
+  return false;
+}
+
+function applyRoleUI(){
+  const isAdmin = SESSION?.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el=>{
+    el.style.display = isAdmin ? '' : 'none';
+  });
+}
+
+function updateHeaderUser(){
+  if(!SESSION) return;
+  const initials = SESSION.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('header-avatar').textContent = initials;
+  document.getElementById('header-username').textContent = SESSION.name;
+  const badge = document.getElementById('header-role-badge');
+  badge.textContent = SESSION.role==='admin' ? 'Admin' : 'User';
+  badge.className = SESSION.role==='admin'
+    ? 'text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-semibold hidden sm:block'
+    : 'text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full font-semibold hidden sm:block';
+  const dn = document.getElementById('dropdown-name');
+  const dr = document.getElementById('dropdown-role');
+  if(dn) dn.textContent = SESSION.name;
+  if(dr) dr.textContent = SESSION.role==='admin' ? 'Administrator' : 'User';
+}
+
+function togglePassVis(){
+  const inp = document.getElementById('login-pass');
+  const btn = document.getElementById('pass-eye');
+  if(inp.type==='password'){ inp.type='text'; btn.textContent='🙈'; }
+  else { inp.type='password'; btn.textContent='👁'; }
+}
+
+// ---- USER MANAGEMENT (admin) ----
+function openUsersModal(){ openSettings('users'); }
+function closeUsersModal(){ closeSettings(); }
+
+function renderUsersList(){
+  const users = getUsers();
+  document.getElementById('users-list-inline').innerHTML = users.length===0
+    ? '<p class="text-sm text-gray-400 text-center py-4">No users yet.</p>'
+    : `<table class="w-full text-sm">
+      <thead><tr class="text-xs text-gray-500 uppercase border-b">
+        <th class="text-left py-2 px-2">Name</th>
+        <th class="text-left py-2 px-2">Username</th>
+        <th class="text-left py-2 px-2">Password</th>
+        <th class="text-left py-2 px-2">Role</th>
+        <th class="py-2 px-2"></th>
+      </tr></thead>
+      <tbody class="divide-y divide-gray-100">
+        ${users.map(u=>`
+        <tr class="hover:bg-gray-50">
+          <td class="py-2.5 px-2 font-medium text-gray-800">${esc(u.name)}</td>
+          <td class="py-2.5 px-2 text-gray-600 font-mono text-xs">${esc(u.username)}</td>
+          <td class="py-2.5 px-2">
+            <div class="flex items-center gap-1">
+              <span class="font-mono text-xs text-gray-500" id="pw-${u.id}">••••••••</span>
+              <button onclick="togglePwVis('${u.id}','${esc(u.password)}')" class="text-xs text-gray-400 hover:text-gray-600">👁</button>
+            </div>
+          </td>
+          <td class="py-2.5 px-2">
+            <select onchange="changeUserRole('${u.id}',this.value)" class="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
+              <option value="user" ${u.role==='user'?'selected':''}>👤 User</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>🔑 Admin</option>
+            </select>
+          </td>
+          <td class="py-2.5 px-2 text-right">
+            <div class="flex items-center justify-end gap-1">
+              <button onclick="resetPassword('${u.id}')" class="text-xs text-blue-500 hover:bg-blue-50 px-2 py-1 rounded-lg">Reset PW</button>
+              ${SESSION?.id===u.id ? '<span class="text-xs text-gray-300 px-2">you</span>' :
+                `<button onclick="deleteUser('${u.id}')" class="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">Delete</button>`}
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function togglePwVis(id, pw){
+  const el = document.getElementById('pw-'+id);
+  el.textContent = el.textContent.includes('•') ? pw : '••••••••';
+}
+
+function addUser(){
+  const name = document.getElementById('nu-name').value.trim();
+  const username = document.getElementById('nu-user').value.trim();
+  const password = document.getElementById('nu-pass').value;
+  const role = document.getElementById('nu-role').value;
+  if(!name||!username||!password){ toast('Fill all fields','error'); return; }
+  const users = getUsers();
+  if(users.find(u=>u.username.toLowerCase()===username.toLowerCase())){
+    toast('Username already exists','error'); return;
+  }
+  users.push({ id: Date.now().toString(), name, username, password, role });
+  saveUsers(users);
+  document.getElementById('nu-name').value='';
+  document.getElementById('nu-user').value='';
+  document.getElementById('nu-pass').value='';
+  renderUsersList();
+  toast('✅ User added: '+name,'success');
+}
+
+function deleteUser(id){
+  const users = getUsers();
+  const u = users.find(x=>x.id===id);
+  if(!u) return;
+  if(!confirm('Delete user "'+u.name+'"?')) return;
+  saveUsers(users.filter(x=>x.id!==id));
+  renderUsersList();
+  toast('User deleted','info');
+}
+
+function changeUserRole(id, role){
+  const users = getUsers();
+  const u = users.find(x=>x.id===id);
+  if(u){ u.role=role; saveUsers(users); toast('Role updated','success'); }
+}
+
+function resetPassword(id){
+  const users = getUsers();
+  const u = users.find(x=>x.id===id);
+  if(!u) return;
+  const np = prompt('New password for '+u.name+':');
+  if(!np||!np.trim()) return;
+  u.password = np.trim();
+  saveUsers(users);
+  renderUsersList();
+  toast('✅ Password updated for '+u.name,'success');
+}
+
+function openChangePass(){
+  const np = prompt('Enter new password:');
+  if(!np||!np.trim()) return;
+  const users = getUsers();
+  const u = users.find(x=>x.id===SESSION.id);
+  if(u){ u.password=np.trim(); saveUsers(users); toast('✅ Password changed','success'); }
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  loadGSSettings();
+  startContinuousBackup();
+  if(checkSession()){
+    document.getElementById('login-screen').classList.add('hidden');
+    applyRoleUI();
+    updateHeaderUser();
+    init().then(()=>{ if(GS.url && GS.autoLoad) syncFromSheets(); });
+  } else {
+    document.getElementById('login-screen').classList.remove('hidden');
+    init(); // load data silently in background
+  }
+});
+</script>
+</body>
+</html>
