@@ -673,7 +673,8 @@ const S = {
   page:1,
   perPage:50,
   selIdx:null,
-  curAtt:0
+  curAtt:0,
+  bulkSel:new Set()
 };
 
 // ============================================================
@@ -868,7 +869,7 @@ function updateBadges(){
 // ROUTING
 // ============================================================
 function setView(v){
-  S.view=v; S.page=1;
+  S.view=v; S.page=1; S.bulkSel.clear();
   ['dashboard','contacts','today','overdue','hotleads','myleads'].forEach(id=>{
     const el=document.getElementById('nav-'+id);
     if(el){
@@ -1147,12 +1148,24 @@ function renderTable(){
     </div>
   </div>`:'' }
 
+  ${isAdmin&&S.bulkSel.size>0?`
+  <div class="bg-violet-600 text-white rounded-2xl px-4 py-3 flex items-center gap-3 shadow-md">
+    <span class="text-sm font-semibold">${S.bulkSel.size} selected</span>
+    <select id="bulk-assign-user" class="text-sm bg-white text-gray-800 rounded-xl px-3 py-1.5 border-0 focus:outline-none focus:ring-2 focus:ring-white/50 min-w-[160px]">
+      <option value="">— Assign to —</option>
+      <option value="__unassigned__">Unassigned</option>
+      ${allUsers.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}
+    </select>
+    <button onclick="bulkAssign()" class="text-sm bg-white text-violet-700 font-semibold px-4 py-1.5 rounded-xl hover:bg-violet-50 transition-colors">Assign</button>
+    <button onclick="S.bulkSel.clear();renderApp()" class="text-sm text-violet-200 hover:text-white ml-auto">✕ Clear</button>
+  </div>`:''}
+
   <div class="bg-white rounded-2xl border shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b">
           <tr class="text-gray-500 text-xs font-semibold uppercase tracking-wider">
-            <th class="px-4 py-3 text-left w-10">#</th>
+            ${isAdmin?`<th class="px-4 py-3 w-10"><input type="checkbox" id="chk-all" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 accent-violet-600" ${S.bulkSel.size>0&&rows.every(({i})=>S.bulkSel.has(i))?'checked':''}></th>`:'<th class="px-4 py-3 text-left w-10">#</th>'}
             <th class="px-4 py-3 text-left">Company / Contact</th>
             <th class="px-4 py-3 text-left">Phone</th>
             <th class="px-4 py-3 text-left">Zone / City</th>
@@ -1168,8 +1181,12 @@ function renderTable(){
           rows.map(({c,i,cr},ri)=>{
             const ovd=cr.nextFollowUpDate&&isOvd(cr.nextFollowUpDate)&&cr.followUpStatus!=='Completed';
             const tdy=cr.nextFollowUpDate&&isTdy(cr.nextFollowUpDate);
-            return `<tr class="contact-row ${ovd?'is-overdue':tdy?'is-today':''}" onclick="openModal(${i})">
-              <td class="px-4 py-3 text-gray-400 text-xs">${start+ri+1}</td>
+            const checked=S.bulkSel.has(i);
+            return `<tr class="contact-row ${ovd?'is-overdue':tdy?'is-today':''} ${checked?'bg-violet-50':''}">
+              ${isAdmin
+                ? `<td class="px-4 py-3"><input type="checkbox" onchange="toggleSelectRow(${i},this.checked)" onclick="event.stopPropagation()" class="w-4 h-4 accent-violet-600" ${checked?'checked':''}></td>`
+                : `<td class="px-4 py-3 text-gray-400 text-xs">${start+ri+1}</td>`}
+              <td class="px-4 py-3 max-w-[240px] cursor-pointer" onclick="openModal(${i})"
               <td class="px-4 py-3 max-w-[240px]">
                 <div class="flex items-center gap-2.5">
                   <div class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 ${cr.category==='Hot Lead'?'bg-orange-100 text-orange-700':cr.category==='Existing Client'?'bg-emerald-100 text-emerald-700':cr.dnc?'bg-red-100 text-red-500':'bg-violet-100 text-violet-700'}">${String(c['COMPANY NAME']||'?')[0].toUpperCase()}</div>
@@ -1179,25 +1196,25 @@ function renderTable(){
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">${esc(String(c['PHONE NO']||''))}</td>
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap cursor-pointer" onclick="openModal(${i})">${esc(String(c['PHONE NO']||''))}</td>
+              <td class="px-4 py-3 cursor-pointer" onclick="openModal(${i})">
                 <div class="text-xs font-semibold text-gray-700">${esc(c['ZONE']||'')}</div>
                 <div class="text-xs text-gray-500 truncate max-w-[90px]">${esc(c['CITY']||'')}</div>
               </td>
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 cursor-pointer" onclick="openModal(${i})">
                 ${cr.category?`<span class="badge ${CAT_COLORS[cr.category]||'bg-gray-100 text-gray-500'}">${cr.category}</span>`:'<span class="text-gray-300 text-xs">—</span>'}
               </td>
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 cursor-pointer" onclick="openModal(${i})">
                 <div class="text-xs text-gray-600 whitespace-nowrap">${cr.callStatus?(CALL_ICONS[cr.callStatus]||'')+' '+cr.callStatus.replace('Connected - ',''):'—'}</div>
                 ${cr.callAttempts>0?`<div class="text-xs text-gray-400">${cr.callAttempts} calls</div>`:''}
               </td>
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 cursor-pointer" onclick="openModal(${i})">
                 ${cr.nextFollowUpDate?`
                   <div class="text-xs font-medium ${ovd?'text-red-600':tdy?'text-violet-600':'text-gray-700'} whitespace-nowrap">${fmtDate(cr.nextFollowUpDate)}</div>
                   <div class="text-xs ${ovd?'text-red-400':tdy?'text-violet-400':'text-gray-400'}">${daysLbl(cr.nextFollowUpDate)}</div>
                 `:'<span class="text-gray-300 text-xs">Not set</span>'}
               </td>
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 cursor-pointer" onclick="openModal(${i})">
                 ${cr.followUpStatus?`<span class="badge ${FU_COLORS[cr.followUpStatus]||'bg-gray-100 text-gray-500'}">${cr.followUpStatus}</span>`:'<span class="text-gray-300 text-xs">—</span>'}
               </td>
               ${isAdmin?`<td class="px-4 py-3">${(()=>{
@@ -1225,6 +1242,36 @@ function renderTable(){
     </div>`:'' }
   </div>
 </div>`;
+}
+
+function toggleSelectRow(i, checked){
+  if(checked) S.bulkSel.add(i);
+  else S.bulkSel.delete(i);
+  renderApp();
+}
+
+function toggleSelectAll(checked){
+  const data=getFiltered();
+  const start=(S.page-1)*S.perPage;
+  const rows=data.slice(start,start+S.perPage);
+  rows.forEach(({i})=>{ if(checked) S.bulkSel.add(i); else S.bulkSel.delete(i); });
+  renderApp();
+}
+
+function bulkAssign(){
+  const userId=document.getElementById('bulk-assign-user')?.value;
+  if(!userId) return toast('Select a user to assign','info');
+  const assignTo = userId==='__unassigned__' ? '' : userId;
+  S.bulkSel.forEach(i=>{
+    if(!S.crm[i]) S.crm[i]={};
+    S.crm[i].assignedTo = assignTo;
+  });
+  const count=S.bulkSel.size;
+  S.bulkSel.clear();
+  saveAll();
+  renderApp();
+  const userName = userId==='__unassigned__' ? 'Unassigned' : (getUsers().find(u=>u.id===userId)?.name||'user');
+  toast(`✅ ${count} contacts assigned to ${userName}`,'success');
 }
 
 function pageNums(cur,total){
