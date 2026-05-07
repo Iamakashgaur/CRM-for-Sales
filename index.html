@@ -112,6 +112,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
           My Leads
           <span class="hidden text-xs bg-violet-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-none" id="my-badge">0</span>
         </button>
+        <button onclick="setView('templates')" id="nav-templates" class="top-nav-item flex items-center gap-1.5 px-4 py-2">
+          📋 Templates
+        </button>
       </nav>
 
       <!-- Spacer -->
@@ -735,7 +738,7 @@ function updateBadges(){
 // ============================================================
 function setView(v){
   S.view=v; S.page=1; S.bulkSel.clear();
-  ['dashboard','contacts','today','overdue','hotleads','myleads'].forEach(id=>{
+  ['dashboard','contacts','today','overdue','hotleads','myleads','templates'].forEach(id=>{
     const el=document.getElementById('nav-'+id);
     if(el){
       el.classList.toggle('active',id===v);
@@ -757,8 +760,172 @@ function renderApp(){
   if(ls) ls.style.display='none';
   const m=document.getElementById('main-content');
   if(S.view==='dashboard') m.innerHTML=renderDash();
+  else if(S.view==='templates') m.innerHTML=renderTemplates();
   else m.innerHTML=renderTable();
   updateBadges();
+}
+
+// ============================================================
+// TEMPLATES
+// ============================================================
+const TEMPLATES = [
+  { code:'WA1', type:'WhatsApp', situation:'After Call', text:`Hi sir, Romy here from Bright Trading (Surat).
+
+As discussed, we deal in complete range of lab-grown diamonds:
+• Certified & non-certified
+• Melee to solitaires
+• Fancy & rare shapes
+• Matching pairs & calibrated goods
+
+I've shared our latest stock list + price list here.
+You can also explore our full inventory anytime on our website:
+[Website Link]
+
+Let me know your requirement 👍` },
+  { code:'WA2', type:'WhatsApp', situation:'No Answer', text:`Hi sir, I tried reaching you regarding lab-grown diamonds.
+
+We have ready stock across all categories, and I've attached our latest price list + stock list here.
+
+You can also directly check our inventory on:
+[Website Link]
+
+Let me know if I can assist.` },
+  { code:'WA3', type:'WhatsApp', situation:'Already Supplier', text:`Got it sir 👍
+
+Many of our clients also work with multiple suppliers for better pricing and availability.
+
+I'm sharing our latest stock list + price list — you can compare once.
+
+You can also explore everything directly on our website:
+[Website Link]
+
+Happy to work as a backup.` },
+  { code:'WA4', type:'WhatsApp', situation:'Follow-up', text:`Hi sir, just checking — any requirement currently?
+
+We've added some fresh goods recently. Sharing updated stock + price list here.
+
+You can also browse full inventory on:
+[Website Link]
+
+Let me know if you want anything specific.` },
+  { code:'WA5', type:'WhatsApp', situation:'Re-engagement', text:`Hi sir, hope you're doing well.
+
+We've updated our inventory with new stock recently.
+
+Sharing latest price list + stock list.
+
+You can also check everything here:
+[Website Link]
+
+Let me know if anything matches your requirement.` },
+  { code:'EM1', type:'Email', situation:'Intro', text:`Subject: Lab-Grown Diamonds | Stock & Price List Attached
+
+Hi,
+
+This is Romy from Bright Trading India LLP, Surat.
+
+We offer complete range of lab-grown diamonds:
+• Certified & Non-Certified
+• Melee to Solitaires
+• Fancy & Rare Shapes
+• Matching pairs
+• Ready stock
+
+Please find attached our latest stock list and price list.
+
+You can also explore our full inventory here:
+[Website Link]
+
+Looking forward to connecting.
+
+Best regards,
+Romy` },
+  { code:'EM2', type:'Email', situation:'Follow-up', text:`Subject: Follow-up | LGD Requirement
+
+Hi,
+
+Just following up.
+
+Sharing our latest stock list and price list again.
+
+You can also browse inventory here:
+[Website Link]
+
+Let me know if you have any requirement.
+
+Best regards,
+Romy` },
+  { code:'EM3', type:'Email', situation:'Soft Approach', text:`Subject: Sharing for Future Reference
+
+Hi,
+
+Sharing our stock list and price list for your reference.
+
+You can also explore our full inventory here:
+[Website Link]
+
+Happy to connect whenever needed.
+
+Best regards,
+Romy` }
+];
+
+let tmplFilter = 'All';
+
+function renderTemplates(){
+  const types = ['All','WhatsApp','Email'];
+  const filtered = tmplFilter==='All' ? TEMPLATES : TEMPLATES.filter(t=>t.type===tmplFilter);
+  return `
+  <div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h2 class="text-xl font-bold text-gray-900">📋 Message Templates</h2>
+        <p class="text-sm text-gray-500 mt-0.5">Click Copy to copy any template to clipboard</p>
+      </div>
+      <div class="flex gap-2">
+        ${types.map(t=>`<button onclick="setTmplFilter('${t}')" class="px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tmplFilter===t?'bg-violet-600 text-white':'bg-white border border-gray-200 text-gray-600 hover:bg-violet-50'}">${t==='WhatsApp'?'💬 WhatsApp':t==='Email'?'📧 Email':'All'}</button>`).join('')}
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      ${filtered.map(t=>{
+        const isWA = t.type==='WhatsApp';
+        const preview = t.text.slice(0,120).replace(/\n/g,' ') + (t.text.length>120?'…':'');
+        const escaped = t.text.replace(/`/g,'\\`').replace(/\$/g,'\\$');
+        return `
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+          <div class="px-4 py-3 border-b flex items-center justify-between ${isWA?'bg-green-50':'bg-blue-50'}">
+            <div class="flex items-center gap-2">
+              <span class="text-base">${isWA?'💬':'📧'}</span>
+              <span class="font-semibold text-sm ${isWA?'text-green-800':'text-blue-800'}">${t.situation}</span>
+              <span class="text-xs px-2 py-0.5 rounded-full font-mono font-bold ${isWA?'bg-green-200 text-green-700':'bg-blue-200 text-blue-700'}">${t.code}</span>
+            </div>
+            <button onclick="copyTemplate(\`${escaped}\`,'${t.code}')" class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors ${isWA?'bg-green-500 hover:bg-green-600 text-white':'bg-blue-500 hover:bg-blue-600 text-white'}">
+              📋 Copy
+            </button>
+          </div>
+          <div class="p-4">
+            <p class="text-sm text-gray-600 leading-relaxed">${preview}</p>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function setTmplFilter(f){ tmplFilter=f; renderApp(); }
+
+function copyTemplate(text, code){
+  navigator.clipboard.writeText(text).then(()=>{
+    toast('📋 '+code+' copied to clipboard!','success');
+  }).catch(()=>{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('📋 '+code+' copied!','success');
+  });
 }
 
 // ============================================================
