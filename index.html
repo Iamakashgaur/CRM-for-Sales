@@ -133,7 +133,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
           🔔<span id="notif-dot" class="hidden absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
         <button onclick="openSettings()" title="Settings" class="relative w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-violet-50 rounded-xl transition-colors text-base admin-only">
-          ⚙️<span id="gs-dot" class="hidden absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+          ⚙️
         </button>
         <!-- User dropdown -->
         <div class="relative group ml-1">
@@ -394,7 +394,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
         <p class="text-violet-200 text-sm mt-0.5">Import, user management &amp; sync</p>
       </div>
       <div class="flex items-center gap-2">
-        <span id="gs-status-badge" class="text-xs px-3 py-1 rounded-full font-semibold bg-white/20 text-white">Not configured</span>
         <button onclick="closeSettings()" class="w-7 h-7 flex items-center justify-center text-violet-200 hover:text-white hover:bg-white/20 rounded-lg">✕</button>
       </div>
     </div>
@@ -403,8 +402,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
     <div class="flex border-b bg-gray-50 rounded-none px-5 gap-1 pt-2">
       <button onclick="switchSettingsTab('import')" id="stab-import" class="settings-tab active px-4 py-2.5 text-sm font-medium border-b-2 border-violet-600 text-violet-700 -mb-px">📥 Import</button>
       <button onclick="switchSettingsTab('users')" id="stab-users" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">👥 Users</button>
-      <button onclick="switchSettingsTab('sync')" id="stab-sync" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">🔗 Google Sheets</button>
-      <button onclick="switchSettingsTab('backup')" id="stab-backup" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">💾 Backup</button>
+<button onclick="switchSettingsTab('backup')" id="stab-backup" class="settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px">💾 Backup</button>
     </div>
 
     <!-- TAB: Import -->
@@ -451,154 +449,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
       <div id="users-list-inline" class="max-h-64 overflow-y-auto"></div>
     </div>
 
-    <!-- TAB: Google Sheets Sync -->
-    <div id="stab-panel-sync" class="hidden p-5 space-y-5 max-h-[65vh] overflow-y-auto">
-
-      <!-- Step 1 -->
-      <div class="border border-gray-200 rounded-2xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
-          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
-          <span class="font-semibold text-sm text-gray-800">Create a Google Sheet</span>
-        </div>
-        <div class="p-4 text-sm text-gray-600 space-y-2">
-          <p>Go to <a href="https://sheets.google.com" target="_blank" class="text-blue-600 underline">sheets.google.com</a> → create a new blank sheet → name it <strong>CRM Data</strong> (or anything you like).</p>
-        </div>
-      </div>
-
-      <!-- Step 2 -->
-      <div class="border border-gray-200 rounded-2xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
-          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
-          <span class="font-semibold text-sm text-gray-800">Open Apps Script &amp; Paste Code</span>
-        </div>
-        <div class="p-4 space-y-3">
-          <p class="text-sm text-gray-600">In your Sheet → <strong>Extensions → Apps Script</strong> → delete all existing code → paste this:</p>
-          <div class="relative">
-            <button onclick="copyScript()" class="absolute top-2 right-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 px-2 py-1 rounded-lg text-gray-600 z-10">📋 Copy</button>
-            <pre id="apps-script-code" class="bg-gray-900 text-green-300 text-xs p-4 rounded-xl overflow-x-auto leading-relaxed whitespace-pre-wrap">const SHEET = 'CRM_Data';
-
-function doGet(e) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName(SHEET);
-    if (!sh || sh.getLastRow() <= 1) return out({crm:{}});
-    const vals = sh.getDataRange().getValues();
-    const heads = vals[0];
-    const crm = {};
-    for (let i = 1; i < vals.length; i++) {
-      const row = {};
-      heads.forEach((h,j) => row[h] = vals[i][j]);
-      const idx = String(row.idx);
-      try { row.requirementType = JSON.parse(row.requirementType||'[]'); } catch(e){ row.requirementType=[]; }
-      delete row.idx; delete row.updatedAt;
-      crm[idx] = row;
-    }
-    return out({crm, ts: new Date().toISOString()});
-  } catch(e) { return out({error: e.message}); }
-}
-
-function doPost(e) {
-  try {
-    const crm = JSON.parse(e.postData.contents).crm || {};
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName(SHEET);
-    if (!sh) sh = ss.insertSheet(SHEET);
-    const heads = ['idx','companyName','notes','category','callStatus','callAttempts',
-      'interestLevel','requirementType','lastContactDate','nextFollowUpDate',
-      'nextFollowUpTime','followUpStatus','dealProbability','updatedAt'];
-    const rows = [heads];
-    for (const idx in crm) {
-      const c = crm[idx];
-      rows.push([idx, c.companyName||'', c.notes||'', c.category||'',
-        c.callStatus||'', c.callAttempts||0, c.interestLevel||0,
-        JSON.stringify(c.requirementType||[]), c.lastContactDate||'',
-        c.nextFollowUpDate||'', c.nextFollowUpTime||'',
-        c.followUpStatus||'', c.dealProbability||0, new Date().toISOString()]);
-    }
-    sh.clearContents();
-    sh.getRange(1,1,rows.length,heads.length).setValues(rows);
-    return out({status:'ok', rows: rows.length-1});
-  } catch(e) { return out({error: e.message}); }
-}
-
-function out(d) {
-  return ContentService.createTextOutput(JSON.stringify(d))
-    .setMimeType(ContentService.MimeType.JSON);
-}</pre>
-          </div>
-          <p class="text-sm text-gray-500">Then click <strong>Save</strong> (Ctrl+S).</p>
-        </div>
-      </div>
-
-      <!-- Step 3 -->
-      <div class="border border-gray-200 rounded-2xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
-          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
-          <span class="font-semibold text-sm text-gray-800">Deploy as Web App</span>
-        </div>
-        <div class="p-4 text-sm text-gray-600 space-y-1.5">
-          <p>Click <strong>Deploy → New deployment</strong></p>
-          <p>Type: <strong>Web app</strong></p>
-          <p>Execute as: <strong>Me</strong></p>
-          <p>Who has access: <strong>Anyone</strong></p>
-          <p>Click <strong>Deploy</strong> → copy the <strong>Web app URL</strong></p>
-        </div>
-      </div>
-
-      <!-- Step 4 — URL input -->
-      <div class="border border-gray-200 rounded-2xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 flex items-center gap-2 border-b">
-          <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">4</span>
-          <span class="font-semibold text-sm text-gray-800">Paste Web App URL Here</span>
-        </div>
-        <div class="p-4 space-y-3">
-          <input type="url" id="gs-url-input" placeholder="https://script.google.com/macros/s/…/exec"
-            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-          <div class="flex items-center gap-2">
-            <button onclick="testGSConnection()" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl transition-colors font-medium">🔍 Test Connection</button>
-            <button onclick="syncFromSheets(true)" class="text-sm bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">⬇️ Pull from Sheet</button>
-            <button onclick="syncToSheets(true)" class="text-sm bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl transition-colors font-medium">⬆️ Push to Sheet</button>
-          </div>
-          <p id="gs-test-result" class="text-xs text-gray-500 hidden"></p>
-        </div>
-      </div>
-
-      <!-- Sync Options -->
-      <div class="border border-gray-200 rounded-2xl p-4">
-        <p class="text-sm font-semibold text-gray-700 mb-3">⚙️ Sync Options</p>
-        <div class="space-y-2">
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" id="gs-auto-save" class="req-cb w-4 h-4 rounded">
-            <span class="text-sm text-gray-700">Auto-push to Sheet on every save</span>
-          </label>
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" id="gs-auto-load" class="req-cb w-4 h-4 rounded">
-            <span class="text-sm text-gray-700">Auto-pull from Sheet on app load</span>
-          </label>
-        </div>
-        <div class="mt-3 text-xs text-gray-400" id="gs-last-sync"></div>
-      </div>
-
-      <!-- LOCAL BACKUP SECTION -->
-      <div class="border border-emerald-200 bg-emerald-50 rounded-2xl overflow-hidden">
-        <div class="px-4 py-3 flex items-center justify-between border-b border-emerald-200">
-          <div class="flex items-center gap-2">
-            <span class="text-base">💾</span>
-            <span class="font-semibold text-sm text-emerald-800">Daily Excel Backup</span>
-            <span class="text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-semibold">AUTO</span>
-          </div>
-          <div class="flex gap-2">
-            <button onclick="importBackupJSON()" class="text-xs bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-medium">📂 Restore JSON</button>
-            <button onclick="downloadBackupExcel()" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg font-medium">⬇️ Download Excel</button>
-          </div>
-        </div>
-        <div class="p-4">
-          <p class="text-xs text-emerald-700">Excel file auto-downloaded once daily on first save. Contains all CRM data + call logs. Use "Download Excel" anytime for manual backup.</p>
-        </div>
-      </div>
-
-    </div>
-
     <!-- TAB: Backup -->
     <div id="stab-panel-backup" class="hidden p-5 space-y-4 max-h-[65vh] overflow-y-auto">
       <div class="border border-emerald-200 bg-emerald-50 rounded-2xl overflow-hidden">
@@ -620,12 +470,8 @@ function out(d) {
     </div>
 
     <!-- Footer (dynamic per tab) -->
-    <div class="flex items-center justify-between p-4 border-t bg-gray-50 rounded-b-2xl" id="settings-footer">
-      <button onclick="clearGSSettings()" class="text-sm text-red-500 hover:text-red-600 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors" id="gs-disconnect-btn">🗑 Disconnect Sheets</button>
-      <div class="flex gap-2">
-        <button onclick="closeSettings()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100">Close</button>
-        <button onclick="saveGSSettings()" class="text-sm bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-xl font-semibold transition-colors" id="gs-save-btn">Save Sync Settings</button>
-      </div>
+    <div class="flex items-center justify-end p-4 border-t bg-gray-50 rounded-b-2xl" id="settings-footer">
+      <button onclick="closeSettings()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100">Close</button>
     </div>
   </div>
 </div>
@@ -714,7 +560,6 @@ async function init(){
 function saveAll(){
   localStorage.setItem('crm_v2', JSON.stringify(S.crm));
   checkDailyAutoDownload();
-  if(typeof GS !== 'undefined' && GS.url && GS.autoSave) syncToSheets();
 }
 
 function checkDailyAutoDownload(){
@@ -1791,60 +1636,14 @@ document.addEventListener('keydown',e=>{
   if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)){ e.preventDefault(); document.getElementById('global-search').focus(); }
 });
 
-// ============================================================
-// GOOGLE SHEETS SYNC
-// ============================================================
-const GS = { url:'', autoSave:false, autoLoad:false, lastSync:'' };
-
-function loadGSSettings(){
-  const s = localStorage.getItem('gs_settings');
-  if(s){ try{ Object.assign(GS, JSON.parse(s)); }catch(e){} }
-  updateGSDot();
-}
-
-function saveGSSettings(){
-  GS.url = document.getElementById('gs-url-input').value.trim();
-  GS.autoSave = document.getElementById('gs-auto-save').checked;
-  GS.autoLoad = document.getElementById('gs-auto-load').checked;
-  if(!GS.url){ toast('Paste the Web App URL first','error'); return; }
-  localStorage.setItem('gs_settings', JSON.stringify(GS));
-  updateGSDot();
-  closeSettings();
-  toast('✅ Google Sheets settings saved!','success');
-}
-
-function clearGSSettings(){
-  Object.assign(GS, {url:'',autoSave:false,autoLoad:false,lastSync:''});
-  localStorage.removeItem('gs_settings');
-  updateGSDot();
-  closeSettings();
-  toast('Google Sheets disconnected','info');
-}
-
-function updateGSDot(){
-  document.getElementById('gs-dot').classList.toggle('hidden', !GS.url);
-}
-
 function openSettings(tab='import'){
-  loadGSSettings();
-  document.getElementById('gs-url-input').value = GS.url;
-  document.getElementById('gs-auto-save').checked = GS.autoSave;
-  document.getElementById('gs-auto-load').checked = GS.autoLoad;
-  const badge = document.getElementById('gs-status-badge');
-  badge.textContent = GS.url ? '🟢 Connected' : 'Not configured';
-  badge.className = GS.url
-    ? 'text-xs px-3 py-1 rounded-full font-semibold bg-green-500/30 text-white'
-    : 'text-xs px-3 py-1 rounded-full font-semibold bg-white/20 text-white';
-  const lsEl = document.getElementById('gs-last-sync');
-  lsEl.textContent = GS.lastSync ? 'Last synced: ' + new Date(GS.lastSync).toLocaleString('en-IN') : '';
-  document.getElementById('gs-test-result').classList.add('hidden');
   document.getElementById('gs-modal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   switchSettingsTab(tab);
 }
 
 function switchSettingsTab(tab){
-  const tabs = ['import','users','sync','backup'];
+  const tabs = ['import','users','backup'];
   tabs.forEach(t=>{
     const btn = document.getElementById('stab-'+t);
     const panel = document.getElementById('stab-panel-'+t);
@@ -1855,97 +1654,13 @@ function switchSettingsTab(tab){
       : 'settings-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 -mb-px';
     panel.classList.toggle('hidden', !active);
   });
-  // Show/hide sync-specific footer buttons
-  const saveBtn = document.getElementById('gs-save-btn');
-  const discBtn = document.getElementById('gs-disconnect-btn');
-  if(saveBtn) saveBtn.classList.toggle('hidden', tab!=='sync');
-  if(discBtn) discBtn.classList.toggle('hidden', tab!=='sync');
-  // Render users list when switching to users tab
   if(tab==='users') renderUsersList();
 }
-
 
 function closeSettings(){
   document.getElementById('gs-modal').classList.add('hidden');
   document.body.style.overflow = '';
 }
-
-async function testGSConnection(){
-  const url = document.getElementById('gs-url-input').value.trim();
-  if(!url){ toast('Paste URL first','error'); return; }
-  const el = document.getElementById('gs-test-result');
-  el.textContent = '⏳ Testing…'; el.className = 'text-xs text-gray-500';  el.classList.remove('hidden');
-  try{
-    const r = await fetch(url, {redirect:'follow'});
-    const d = await r.json();
-    if(d.error) throw new Error(d.error);
-    el.textContent = '✅ Connection successful! Sheet is ready.';
-    el.className = 'text-xs text-green-600';
-  }catch(e){
-    el.textContent = '❌ Failed: ' + e.message + ' — check URL and deployment settings.';
-    el.className = 'text-xs text-red-500';
-  }
-}
-
-async function syncToSheets(manual=false){
-  if(!GS.url) return;
-  // Build payload — include company name for reference
-  const payload = {};
-  for(const idx in S.crm){
-    const c = S.contacts[idx];
-    payload[idx] = { ...S.crm[idx], companyName: c ? (c['COMPANY NAME']||'') : '' };
-  }
-  try{
-    await fetch(GS.url, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain'}, // avoid CORS preflight
-      body: JSON.stringify({crm: payload}),
-      redirect:'follow'
-    });
-    GS.lastSync = new Date().toISOString();
-    localStorage.setItem('gs_settings', JSON.stringify(GS));
-    if(manual){ toast('⬆️ Pushed to Google Sheet!','success'); openSettings(); }
-  }catch(e){
-    if(manual) toast('Sync failed: '+e.message,'error');
-  }
-}
-
-async function syncFromSheets(manual=false){
-  if(!GS.url) return;
-  try{
-    if(manual) toast('⬇️ Pulling from Google Sheet…','info');
-    const r = await fetch(GS.url+'?action=get', {redirect:'follow'});
-    const d = await r.json();
-    if(d.error) throw new Error(d.error);
-    if(d.crm && Object.keys(d.crm).length){
-      // Merge: sheet wins, keep local keys not in sheet
-      for(const idx in d.crm){
-        const row = d.crm[idx];
-        // parse number fields
-        row.callAttempts = parseInt(row.callAttempts)||0;
-        row.interestLevel = parseInt(row.interestLevel)||0;
-        row.dealProbability = parseInt(row.dealProbability)||0;
-        if(!Array.isArray(row.requirementType)) row.requirementType=[];
-        S.crm[idx] = row;
-      }
-      saveAll();
-      GS.lastSync = new Date().toISOString();
-      localStorage.setItem('gs_settings', JSON.stringify(GS));
-      if(manual){ toast('✅ Pulled '+Object.keys(d.crm).length+' records from Sheet','success'); renderApp(); }
-    } else {
-      if(manual) toast('Sheet is empty — nothing to pull','info');
-    }
-  }catch(e){
-    if(manual) toast('Pull failed: '+e.message,'error');
-  }
-}
-
-function copyScript(){
-  const code = document.getElementById('apps-script-code').textContent;
-  navigator.clipboard.writeText(code).then(()=>toast('📋 Script copied!','success'));
-}
-
-// GS auto-sync is called inside saveAll() directly — see saveAll() definition above
 
 // ============================================================
 // AUTH — USERS & ROLES
@@ -2137,16 +1852,15 @@ function openChangePass(){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
-  loadGSSettings();
   startContinuousBackup();
   if(checkSession()){
     document.getElementById('login-screen').classList.add('hidden');
     applyRoleUI();
     updateHeaderUser();
-    init().then(()=>{ if(GS.url && GS.autoLoad) syncFromSheets(); });
+    init();
   } else {
     document.getElementById('login-screen').classList.remove('hidden');
-    init(); // load data silently in background
+    init();
   }
 });
 </script>
