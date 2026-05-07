@@ -181,7 +181,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
       <div class="flex items-center gap-2 ml-3 flex-shrink-0">
         <span id="m-zone-badge" class="text-xs px-2 py-1 bg-white/20 text-white rounded-full font-medium"></span>
         <button id="dnc-btn" onclick="toggleDNC()" class="text-xs px-2.5 py-1 rounded-full font-semibold border transition-colors">🚫 DNC</button>
-        <button onclick="openModalTemplates()" class="text-xs px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded-full font-semibold border border-white/30 transition-colors">📋 Templates</button>
         <button onclick="closeModal()" class="w-7 h-7 flex items-center justify-center text-violet-200 hover:text-white hover:bg-white/20 rounded-lg transition-colors text-sm">✕</button>
       </div>
     </div>
@@ -497,24 +496,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
     <div class="flex items-center justify-end p-4 border-t bg-gray-50 rounded-b-2xl" id="settings-footer">
       <button onclick="closeSettings()" class="text-sm px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-100">Close</button>
     </div>
-  </div>
-</div>
-
-<!-- ===== TEMPLATES QUICK PANEL ===== -->
-<div id="tmpl-panel" class="hidden fixed inset-0 z-[60] flex items-center justify-center" onclick="closeModalTemplates()">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
-    <div class="flex items-center justify-between px-5 py-4 border-b bg-gradient-to-r from-violet-700 to-indigo-600 rounded-t-2xl">
-      <h3 class="text-white font-bold text-base">📋 Templates</h3>
-      <div class="flex items-center gap-2">
-        <div class="flex gap-1">
-          <button onclick="setTmplFilter('All');renderTmplPanel()" class="tmpl-tab text-xs px-3 py-1 rounded-full font-medium bg-white/20 text-white hover:bg-white/30 transition-colors" id="ttab-All">All</button>
-          <button onclick="setTmplFilter('WhatsApp');renderTmplPanel()" class="tmpl-tab text-xs px-3 py-1 rounded-full font-medium bg-white/10 text-white/70 hover:bg-white/20 transition-colors" id="ttab-WhatsApp">💬 WA</button>
-          <button onclick="setTmplFilter('Email');renderTmplPanel()" class="tmpl-tab text-xs px-3 py-1 rounded-full font-medium bg-white/10 text-white/70 hover:bg-white/20 transition-colors" id="ttab-Email">📧 Email</button>
-        </div>
-        <button onclick="closeModalTemplates()" class="w-7 h-7 flex items-center justify-center text-violet-200 hover:text-white hover:bg-white/20 rounded-lg text-sm">✕</button>
-      </div>
-    </div>
-    <div id="tmpl-panel-list" class="overflow-y-auto flex-1 p-3 space-y-2"></div>
   </div>
 </div>
 
@@ -932,42 +913,6 @@ function renderTemplates(){
 }
 
 function setTmplFilter(f){ tmplFilter=f; renderApp(); }
-
-function openModalTemplates(){
-  document.getElementById('tmpl-panel').classList.remove('hidden');
-  renderTmplPanel();
-}
-
-function closeModalTemplates(){
-  document.getElementById('tmpl-panel').classList.add('hidden');
-}
-
-function renderTmplPanel(){
-  const filtered = tmplFilter==='All' ? TEMPLATES : TEMPLATES.filter(t=>t.type===tmplFilter);
-  ['All','WhatsApp','Email'].forEach(t=>{
-    const btn = document.getElementById('ttab-'+t);
-    if(!btn) return;
-    btn.className = tmplFilter===t
-      ? 'tmpl-tab text-xs px-3 py-1 rounded-full font-medium bg-white/30 text-white transition-colors'
-      : 'tmpl-tab text-xs px-3 py-1 rounded-full font-medium bg-white/10 text-white/70 hover:bg-white/20 transition-colors';
-  });
-  document.getElementById('tmpl-panel-list').innerHTML = filtered.map(t=>{
-    const isWA = t.type==='WhatsApp';
-    const preview = t.text.slice(0,100).replace(/\n/g,' ')+'…';
-    const escaped = t.text.replace(/`/g,'\\`').replace(/\$/g,'\\$');
-    return `<div class="border rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
-      <div class="flex items-center justify-between px-3 py-2 ${isWA?'bg-green-50':'bg-blue-50'}">
-        <div class="flex items-center gap-2">
-          <span class="text-sm">${isWA?'💬':'📧'}</span>
-          <span class="font-semibold text-sm ${isWA?'text-green-800':'text-blue-800'}">${t.situation}</span>
-          <span class="text-xs font-mono px-1.5 py-0.5 rounded font-bold ${isWA?'bg-green-200 text-green-700':'bg-blue-200 text-blue-700'}">${t.code}</span>
-        </div>
-        <button onclick="copyTemplate(\`${escaped}\`,'${t.code}')" class="text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${isWA?'bg-green-500 hover:bg-green-600 text-white':'bg-blue-500 hover:bg-blue-600 text-white'}">📋 Copy</button>
-      </div>
-      <div class="px-3 py-2 bg-white"><p class="text-xs text-gray-500">${preview}</p></div>
-    </div>`;
-  }).join('');
-}
 
 function copyTemplate(text, code){
   navigator.clipboard.writeText(text).then(()=>{
