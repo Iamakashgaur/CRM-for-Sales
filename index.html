@@ -433,6 +433,26 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
 
     <!-- TAB: Users -->
     <div id="stab-panel-users" class="hidden p-5 space-y-4 max-h-[65vh] overflow-y-auto">
+
+      <!-- JSONbin Cloud Sync -->
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-sm font-semibold text-blue-800">🔗 Cloud User Sync (JSONbin.io)</p>
+          <span id="jbin-status" class="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Not configured</span>
+        </div>
+        <p class="text-xs text-blue-600 mb-3">Sync users across all devices. Free at <strong>jsonbin.io</strong> — create account → New Bin → copy Bin ID + API Key.</p>
+        <div class="space-y-2">
+          <input type="password" id="jbin-key" placeholder="X-Master-Key (API Key)" class="w-full px-3 py-2 border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <input type="text" id="jbin-bin" placeholder="Bin ID (e.g. 64abc123def456...)" class="w-full px-3 py-2 border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button onclick="saveJBinConfig()" class="text-sm bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl font-medium transition-colors">💾 Save</button>
+          <button onclick="testJBinConnection()" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl font-medium transition-colors">🔍 Test</button>
+          <button onclick="clearJBinConfig()" class="text-sm text-red-400 hover:text-red-600 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors">Disconnect</button>
+        </div>
+        <p id="jbin-test-result" class="text-xs mt-2 hidden"></p>
+      </div>
+
       <div class="bg-gray-50 rounded-xl p-4 border">
         <p class="text-sm font-semibold text-gray-700 mb-3">➕ Add New User</p>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1637,6 +1657,13 @@ document.addEventListener('keydown',e=>{
 });
 
 function openSettings(tab='import'){
+  loadJBinConfig();
+  const key = document.getElementById('jbin-key');
+  const bin = document.getElementById('jbin-bin');
+  if(key) key.value = JBIN.apiKey;
+  if(bin) bin.value = JBIN.binId;
+  const tr = document.getElementById('jbin-test-result');
+  if(tr) tr.classList.add('hidden');
   document.getElementById('gs-modal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   switchSettingsTab(tab);
@@ -1663,6 +1690,88 @@ function closeSettings(){
 }
 
 // ============================================================
+// JSONBIN USER SYNC
+// ============================================================
+const JBIN = { apiKey: '', binId: '' };
+
+function loadJBinConfig(){
+  try{ Object.assign(JBIN, JSON.parse(localStorage.getItem('jbin_config')||'{}')); }catch(e){}
+  updateJBinStatus();
+}
+
+function saveJBinConfig(){
+  const k = document.getElementById('jbin-key').value.trim();
+  const b = document.getElementById('jbin-bin').value.trim();
+  if(!k||!b){ toast('Fill API Key and Bin ID','error'); return; }
+  JBIN.apiKey = k; JBIN.binId = b;
+  localStorage.setItem('jbin_config', JSON.stringify(JBIN));
+  updateJBinStatus();
+  toast('✅ JSONbin config saved — users now sync across devices','success');
+}
+
+function clearJBinConfig(){
+  JBIN.apiKey = ''; JBIN.binId = '';
+  localStorage.removeItem('jbin_config');
+  updateJBinStatus();
+  toast('JSONbin disconnected','info');
+}
+
+function updateJBinStatus(){
+  const el = document.getElementById('jbin-status');
+  if(!el) return;
+  if(JBIN.apiKey && JBIN.binId){
+    el.textContent = '🟢 Connected';
+    el.className = 'text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium';
+  } else {
+    el.textContent = 'Not configured';
+    el.className = 'text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium';
+  }
+}
+
+async function fetchUsersFromJBin(){
+  if(!JBIN.apiKey||!JBIN.binId) return null;
+  try{
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${JBIN.binId}/latest`,{
+      headers:{ 'X-Master-Key': JBIN.apiKey }
+    });
+    const d = await r.json();
+    if(d.record && Array.isArray(d.record.users)) return d.record.users;
+  }catch(e){}
+  return null;
+}
+
+async function pushUsersToJBin(users){
+  if(!JBIN.apiKey||!JBIN.binId) return;
+  try{
+    await fetch(`https://api.jsonbin.io/v3/b/${JBIN.binId}`,{
+      method:'PUT',
+      headers:{ 'X-Master-Key': JBIN.apiKey, 'Content-Type':'application/json' },
+      body: JSON.stringify({ users })
+    });
+  }catch(e){}
+}
+
+async function testJBinConnection(){
+  const k = document.getElementById('jbin-key').value.trim();
+  const b = document.getElementById('jbin-bin').value.trim();
+  const el = document.getElementById('jbin-test-result');
+  if(!k||!b){ toast('Fill API Key and Bin ID first','error'); return; }
+  el.textContent = '⏳ Testing…'; el.className = 'text-xs mt-2 text-gray-500'; el.classList.remove('hidden');
+  try{
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${b}/latest`,{
+      headers:{ 'X-Master-Key': k }
+    });
+    const d = await r.json();
+    if(d.message && d.message.toLowerCase().includes('invalid')){ throw new Error(d.message); }
+    el.textContent = '✅ Connected! Bin is accessible.';
+    el.className = 'text-xs mt-2 text-green-600';
+  }catch(e){
+    el.textContent = '❌ Failed: ' + e.message;
+    el.className = 'text-xs mt-2 text-red-500';
+  }
+}
+
+// ============================================================
 // AUTH — USERS & ROLES
 // ============================================================
 const DEFAULT_USERS = [
@@ -1676,11 +1785,30 @@ function getUsers(){
   catch(e){ return DEFAULT_USERS; }
 }
 
-function saveUsers(users){ localStorage.setItem('crm_users', JSON.stringify(users)); }
+function saveUsers(users){
+  localStorage.setItem('crm_users', JSON.stringify(users));
+  pushUsersToJBin(users);
+}
 
-function doLogin(){
+async function doLogin(){
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value;
+  const btn = document.querySelector('#login-screen button[onclick="doLogin()"]');
+
+  if(JBIN.apiKey && JBIN.binId){
+    btn.textContent = '⏳ Signing in…';
+    btn.disabled = true;
+    const cloudUsers = await Promise.race([
+      fetchUsersFromJBin(),
+      new Promise(r => setTimeout(()=>r(null), 4000))
+    ]);
+    if(cloudUsers){
+      localStorage.setItem('crm_users', JSON.stringify(cloudUsers));
+    }
+    btn.textContent = 'Sign In →';
+    btn.disabled = false;
+  }
+
   const users = getUsers();
   const match = users.find(x => x.username.toLowerCase()===u.toLowerCase() && x.password===p);
   if(!match){
@@ -1852,6 +1980,7 @@ function openChangePass(){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
+  loadJBinConfig();
   startContinuousBackup();
   if(checkSession()){
     document.getElementById('login-screen').classList.add('hidden');
