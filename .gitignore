@@ -1,1 +1,32 @@
 .claude/settings.local.json
+
+# Next.js
+.next/
+out/
+build/
+
+# Dependencies
+node_modules/
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+crm.db
+crm.db-journal
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Python (legacy)
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

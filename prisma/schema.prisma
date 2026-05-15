@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("REP")
+  avatar       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedContacts Contact[]   @relation("ContactOwner")
+  ownedDeals    Deal[]      @relation("DealOwner")
+  activities    Activity[]
+  emailSyncs    EmailSync[]
+  aiInsights    AIInsight[]
+}
+
+model Contact {
+  id          String   @id @default(cuid())
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  title       String?
+  source      String?
+  tags        String   @default("[]")
+  notes       String?
+  linkedinUrl String?
+  website     String?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner      User               @relation("ContactOwner", fields: [ownerId], references: [id])
+  deals      Deal[]
+  activities Activity[]
+  aiInsights AIInsight[]
+  emailMsgs  EmailSyncMessage[]
+
+  @@index([ownerId])
+  @@index([email])
+  @@index([company])
+}
+
+model Stage {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  order       Int     @unique
+  color       String  @default("#6366f1")
+  probability Int     @default(50)
+  isDefault   Boolean @default(false)
+
+  deals Deal[]
+}
+
+model Deal {
+  id                String    @id @default(cuid())
+  title             String
+  value             Float     @default(0)
+  currency          String    @default("USD")
+  stage             String
+  stageId           String
+  probability       Int       @default(50)
+  expectedCloseDate DateTime?
+  actualCloseDate   DateTime?
+  contactId         String
+  ownerId           String
+  tags              String    @default("[]")
+  notes             String?
+  lostReason        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  contact    Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  owner      User        @relation("DealOwner", fields: [ownerId], references: [id])
+  stageRef   Stage       @relation(fields: [stageId], references: [id])
+  activities Activity[]
+  aiInsights AIInsight[]
+
+  @@index([ownerId])
+  @@index([stageId])
+  @@index([contactId])
+}
+
+model Activity {
+  id          String    @id @default(cuid())
+  type        String
+  subject     String
+  body        String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  dealId      String?
+  contactId   String?
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  deal    Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id])
+
+  @@index([dealId])
+  @@index([contactId])
+  @@index([userId])
+}
+
+model EmailSync {
+  id           String    @id @default(cuid())
+  provider     String
+  accessToken  String
+  refreshToken String?
+  email        String
+  userId       String
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages EmailSyncMessage[]
+
+  @@unique([userId, provider])
+}
+
+model EmailSyncMessage {
+  id         String   @id @default(cuid())
+  messageId  String   @unique
+  subject    String
+  from       String
+  to         String
+  body       String?
+  receivedAt DateTime
+  syncId     String
+  contactId  String?
+  createdAt  DateTime @default(now())
+
+  sync    EmailSync @relation(fields: [syncId], references: [id], onDelete: Cascade)
+  contact Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([syncId])
+  @@index([contactId])
+}
+
+model AIInsight {
+  id        String   @id @default(cuid())
+  type      String
+  payload   String
+  dealId    String?
+  contactId String?
+  userId    String
+  createdAt DateTime @default(now())
+
+  deal    Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id])
+
+  @@index([dealId])
+  @@index([contactId])
+}
