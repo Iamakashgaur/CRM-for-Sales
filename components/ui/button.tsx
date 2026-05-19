@@ -6,22 +6,22 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-all duration-150 ease-out-expo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-all duration-180 ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.99]",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow",
+          "bg-primary text-primary-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:bg-primary/90 hover:shadow-[0_4px_10px_-2px_rgba(15,23,42,0.12)] hover:-translate-y-px",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:bg-destructive/90 hover:shadow-[0_4px_10px_-2px_rgba(220,38,38,0.18)] hover:-translate-y-px",
         outline:
-          "border border-border bg-background shadow-sm hover:bg-muted/60 hover:text-foreground",
+          "border border-border bg-background shadow-xs hover:bg-muted/60 hover:text-foreground hover:border-border-strong",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-muted/60 hover:text-foreground",
-        link: "text-accent underline-offset-4 hover:underline",
+        link: "text-accent-strong underline-offset-4 hover:underline",
         accent:
-          "bg-accent text-accent-foreground shadow-sm hover:bg-accent/90 hover:shadow",
+          "bg-accent text-accent-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05)] hover:bg-accent/90 hover:shadow-[0_4px_10px_-2px_rgba(202,138,4,0.25)] hover:-translate-y-px",
       },
       size: {
         default: "h-9 px-4 py-2",

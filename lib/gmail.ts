@@ -59,7 +59,8 @@ export async function exchangeGmailCode(code: string, redirectUri: string): Prom
         const profile = await profileRes.json()
         email = profile.emailAddress ?? null
       }
-    } catch {
+    } catch (e) {
+      console.warn("Gmail profile fetch failed:", (e as Error).message)
       email = null
     }
 
@@ -69,7 +70,8 @@ export async function exchangeGmailCode(code: string, redirectUri: string): Prom
       expiresIn: data.expires_in ?? 3600,
       email,
     }
-  } catch {
+  } catch (e) {
+    console.warn("Gmail code exchange failed:", (e as Error).message)
     return { accessToken: "", refreshToken: null, expiresIn: 0, email: null }
   }
 }
@@ -90,7 +92,8 @@ export async function refreshGmailToken(refreshToken: string): Promise<string | 
     if (!res.ok) return null
     const data = await res.json()
     return data.access_token ?? null
-  } catch {
+  } catch (e) {
+    console.warn("Gmail token refresh failed:", (e as Error).message)
     return null
   }
 }
@@ -100,7 +103,8 @@ function decodeBase64Url(s: string): string {
     const norm = s.replace(/-/g, "+").replace(/_/g, "/")
     if (typeof Buffer !== "undefined") return Buffer.from(norm, "base64").toString("utf-8")
     return atob(norm)
-  } catch {
+  } catch (e) {
+    console.warn("Gmail base64 decode failed:", (e as Error).message)
     return ""
   }
 }
@@ -111,7 +115,13 @@ function parseHeaders(headers: Array<{ name: string; value: string }>): Record<s
   return out
 }
 
-function extractBody(payload: any): string {
+interface GmailPart {
+  mimeType?: string
+  body?: { data?: string }
+  parts?: GmailPart[]
+}
+
+function extractBody(payload: GmailPart | null | undefined): string {
   if (!payload) return ""
   if (payload.body?.data) return decodeBase64Url(payload.body.data)
   if (Array.isArray(payload.parts)) {
@@ -126,26 +136,59 @@ function extractBody(payload: any): string {
   return ""
 }
 
+interface GmailAuthCtx {
+  syncId: string
+  accessToken: string
+  refreshToken: string | null
+}
+
+async function fetchWithGmailRefresh(url: string, ctx: GmailAuthCtx): Promise<Response> {
+  let token = ctx.accessToken
+  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (res.status === 401 && ctx.refreshToken) {
+    const newToken = await refreshGmailToken(ctx.refreshToken)
+    if (newToken) {
+      token = newToken
+      ctx.accessToken = newToken
+      try {
+        const { prisma } = await import("./prisma")
+        const { encrypt } = await import("./crypto")
+        await prisma.emailSync.update({ where: { id: ctx.syncId }, data: { accessToken: encrypt(newToken) } })
+      } catch (e) {
+        console.warn("Gmail token persist failed:", (e as Error).message)
+      }
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    }
+  }
+  return res
+}
+
 export async function fetchGmailMessagesByContact(
   accessToken: string,
   contactEmail: string,
-  max = 25
+  max = 25,
+  authCtx?: { syncId: string; refreshToken: string | null }
 ): Promise<GmailMessage[]> {
   try {
     if (!accessToken || !contactEmail) return []
+    const ctx: GmailAuthCtx = {
+      syncId: authCtx?.syncId ?? "",
+      accessToken,
+      refreshToken: authCtx?.refreshToken ?? null,
+    }
     const q = encodeURIComponent(`from:${contactEmail} OR to:${contactEmail}`)
-    const listRes = await fetch(`${GMAIL_API}/messages?q=${q}&maxResults=${max}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+    const listRes = ctx.syncId
+      ? await fetchWithGmailRefresh(`${GMAIL_API}/messages?q=${q}&maxResults=${max}`, ctx)
+      : await fetch(`${GMAIL_API}/messages?q=${q}&maxResults=${max}`, { headers: { Authorization: `Bearer ${ctx.accessToken}` } })
     if (!listRes.ok) return []
     const listData = await listRes.json()
     const ids: Array<{ id: string; threadId: string }> = listData.messages ?? []
     const results: GmailMessage[] = []
     for (const m of ids) {
       try {
-        const detailRes = await fetch(`${GMAIL_API}/messages/${m.id}?format=full`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        })
+        const detailRes = ctx.syncId
+          ? await fetchWithGmailRefresh(`${GMAIL_API}/messages/${m.id}?format=full`, ctx)
+          : await fetch(`${GMAIL_API}/messages/${m.id}?format=full`, { headers: { Authorization: `Bearer ${ctx.accessToken}` } })
         if (!detailRes.ok) continue
         const detail = await detailRes.json()
         const headers = parseHeaders(detail.payload?.headers ?? [])
@@ -158,12 +201,14 @@ export async function fetchGmailMessagesByContact(
           body: extractBody(detail.payload),
           receivedAt: new Date(Number(detail.internalDate ?? Date.now())),
         })
-      } catch {
+      } catch (e) {
+        console.warn("Gmail message fetch failed:", (e as Error).message)
         continue
       }
     }
     return results
-  } catch {
+  } catch (e) {
+    console.warn("Gmail list fetch failed:", (e as Error).message)
     return []
   }
 }

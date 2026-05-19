@@ -1,11 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk"
+import type { AIInsight } from "@prisma/client"
+import { callLLM } from "./ai-provider"
+import type { TaskKey } from "./ai-models"
 
-const MODEL = "claude-sonnet-4-5"
-
-function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return null
-  return new Anthropic({ apiKey: key })
+export function parseAIInsight<T>(insight: AIInsight): T | null {
+  try {
+    return JSON.parse(insight.payload) as T
+  } catch {
+    console.warn("Bad AIInsight payload:", insight.id)
+    return null
+  }
 }
 
 export interface ScoreResult {
@@ -26,27 +29,35 @@ export interface DraftEmailResult {
   tone: string
 }
 
-function extractJson<T>(text: string, fallback: T): T {
+export function extractJson<T>(text: string, fallback: T): T {
   try {
-    const m = text.match(/\{[\s\S]*\}/)
-    if (!m) return fallback
-    return JSON.parse(m[0]) as T
+    // Try direct parse first
+    const trimmed = text.trim()
+    try { return JSON.parse(trimmed) as T } catch { /* fall through */ }
+    // Strip ```json fences if present
+    const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
+    if (fence) {
+      try { return JSON.parse(fence[1]) as T } catch { /* fall through */ }
+    }
+    // Greedy match — works for {...} and [...]
+    const objMatch = text.match(/\{[\s\S]*\}/)
+    if (objMatch) {
+      try { return JSON.parse(objMatch[0]) as T } catch { /* fall through */ }
+    }
+    const arrMatch = text.match(/\[[\s\S]*\]/)
+    if (arrMatch) {
+      try { return JSON.parse(arrMatch[0]) as T } catch { /* fall through */ }
+    }
+    return fallback
   } catch {
     return fallback
   }
 }
 
-async function callClaude(prompt: string): Promise<string> {
-  const client = getClient()
-  if (!client) throw new Error("No Anthropic API key configured")
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  })
-  const block = resp.content[0]
-  if (block && block.type === "text") return block.text
-  return ""
+async function callClaude(prompt: string, task?: TaskKey): Promise<string> {
+  const result = await callLLM({ prompt, maxTokens: 1024, task })
+  if (!result.ok) throw new Error(result.error ?? "LLM call failed")
+  return result.text
 }
 
 export async function scoreDeal(input: {
@@ -79,7 +90,7 @@ Deal:
 
 Respond with JSON:
 {"score": <0-100>, "confidence": "low"|"medium"|"high", "reasoning": "<1-2 sentences>", "risks": ["..."], "opportunities": ["..."]}`
-    const text = await callClaude(prompt)
+    const text = await callClaude(prompt, "score")
     const parsed = extractJson<ScoreResult>(text, fallback)
     if (typeof parsed.score !== "number") return fallback
     return parsed
@@ -109,12 +120,26 @@ Recent activities: ${input.recentActivities.join("; ") || "none"}
 
 JSON shape:
 {"actions": [{"title": "...", "description": "...", "priority": "low"|"medium"|"high", "type": "CALL"|"EMAIL"|"MEETING"|"NOTE"|"TASK"}]}`
-    const text = await callClaude(prompt)
+    const text = await callClaude(prompt, "suggest")
     const parsed = extractJson<SuggestionResult>(text, fallback)
     if (!Array.isArray(parsed.actions)) return fallback
     return parsed
   } catch {
     return fallback
+  }
+}
+
+export type DraftLanguage = "en" | "hi" | "hinglish"
+
+function languageInstruction(lang: DraftLanguage): string {
+  switch (lang) {
+    case "hi":
+      return "Draft the email in Hindi (Devanagari script). Keep subject also in Hindi. Use formal but warm tone suitable for Indian B2B business."
+    case "hinglish":
+      return "Draft in Hinglish — natural mix of Hindi and English as urban Indian professionals speak. Hindi can be in Devanagari or romanized. Keep it conversational yet professional."
+    case "en":
+    default:
+      return "Draft in clear, professional English."
   }
 }
 
@@ -124,7 +149,9 @@ export async function draftEmail(input: {
   dealTitle?: string | null
   purpose: string
   tone?: "professional" | "friendly" | "concise"
+  language?: DraftLanguage
 }): Promise<DraftEmailResult> {
+  const language: DraftLanguage = input.language ?? "en"
   const fallback: DraftEmailResult = {
     subject: `Following up: ${input.dealTitle ?? input.purpose}`,
     body: `Hi ${input.contactName.split(" ")[0] ?? input.contactName},\n\nI wanted to follow up regarding ${input.purpose}. Do you have time this week for a quick chat?\n\nBest regards`,
@@ -138,9 +165,12 @@ Related deal: ${input.dealTitle ?? "N/A"}
 Purpose: ${input.purpose}
 Tone: ${input.tone ?? "professional"}
 
+Language: ${language}
+${languageInstruction(language)}
+
 JSON shape:
 {"subject": "...", "body": "<full email body with greeting and signoff>", "tone": "..."}`
-    const text = await callClaude(prompt)
+    const text = await callClaude(prompt, "draft")
     const parsed = extractJson<DraftEmailResult>(text, fallback)
     if (!parsed.subject || !parsed.body) return fallback
     return parsed

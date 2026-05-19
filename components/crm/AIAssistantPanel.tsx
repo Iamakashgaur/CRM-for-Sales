@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useMutation } from "@tanstack/react-query"
-import { Sparkles, RefreshCw, Mail, AlertTriangle, TrendingUp, Loader2 } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Sparkles, RefreshCw, Mail, AlertTriangle, TrendingUp } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -22,14 +22,80 @@ interface SuggestionResult {
   actions: Array<{ title: string; description: string; priority: "low" | "medium" | "high"; type: string }>
 }
 
+interface CachedInsight {
+  id: string
+  type: string
+  payload: string
+  createdAt: string
+}
+
+interface DealAIData {
+  aiInsights: CachedInsight[]
+  contact?: { id: string; email: string } | null
+  latestScore?: ScoreResult | null
+  latestSuggestions?: SuggestionResult | null
+}
+
+function parsePayload<T>(p: string): T | null {
+  try {
+    return JSON.parse(p) as T
+  } catch {
+    return null
+  }
+}
+
 export function AIAssistantPanel({ dealId }: { dealId: string }) {
+  const qc = useQueryClient()
   const [score, setScore] = React.useState<ScoreResult | null>(null)
   const [suggestions, setSuggestions] = React.useState<SuggestionResult | null>(null)
   const [composeOpen, setComposeOpen] = React.useState(false)
 
+  const cachedQ = useQuery<DealAIData>({
+    queryKey: ["deal", dealId, "ai-cache"],
+    queryFn: async () => {
+      const res = await fetch(`/api/deals/${dealId}`)
+      if (!res.ok) throw new Error("Failed")
+      const data = (await res.json()) as {
+        aiInsights?: CachedInsight[]
+        contact?: { id: string; email: string } | null
+        latestScore?: ScoreResult | null
+        latestSuggestions?: SuggestionResult | null
+      }
+      return {
+        aiInsights: data.aiInsights ?? [],
+        contact: data.contact ?? null,
+        latestScore: data.latestScore ?? null,
+        latestSuggestions: data.latestSuggestions ?? null,
+      }
+    },
+  })
+
+  React.useEffect(() => {
+    if (!cachedQ.data) return
+    // Prefer server-parsed values; fall back to client-side parsing
+    if (cachedQ.data.latestScore && !score) setScore(cachedQ.data.latestScore)
+    else if (!score) {
+      const latest = cachedQ.data.aiInsights.find((i) => i.type === "SCORE")
+      if (latest) {
+        const parsed = parsePayload<ScoreResult>(latest.payload)
+        if (parsed) setScore(parsed)
+      }
+    }
+    if (cachedQ.data.latestSuggestions && !suggestions) setSuggestions(cachedQ.data.latestSuggestions)
+    else if (!suggestions) {
+      const latest = cachedQ.data.aiInsights.find((i) => i.type === "SUGGESTION")
+      if (latest) {
+        const parsed = parsePayload<SuggestionResult>(latest.payload)
+        if (parsed) setSuggestions(parsed)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cachedQ.data])
+
   const scoreM = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/ai/score", {
+    mutationFn: async (refresh: boolean) => {
+      const url = refresh ? "/api/ai/score?refresh=1" : "/api/ai/score"
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dealId }),
@@ -37,13 +103,17 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
       if (!res.ok) throw new Error("Score failed")
       return res.json() as Promise<ScoreResult>
     },
-    onSuccess: (d) => setScore(d),
+    onSuccess: (d) => {
+      setScore(d)
+      qc.invalidateQueries({ queryKey: ["deal", dealId, "ai-cache"] })
+    },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const suggestM = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/ai/suggest", {
+    mutationFn: async (refresh: boolean) => {
+      const url = refresh ? "/api/ai/suggest?refresh=1" : "/api/ai/suggest"
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dealId }),
@@ -51,20 +121,24 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
       if (!res.ok) throw new Error("Suggest failed")
       return res.json() as Promise<SuggestionResult>
     },
-    onSuccess: (d) => setSuggestions(d),
+    onSuccess: (d) => {
+      setSuggestions(d)
+      qc.invalidateQueries({ queryKey: ["deal", dealId, "ai-cache"] })
+    },
     onError: (e: Error) => toast.error(e.message),
   })
 
-  React.useEffect(() => {
-    scoreM.mutate()
-    suggestM.mutate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dealId])
-
-  function refresh() {
-    scoreM.mutate()
-    suggestM.mutate()
+  async function runAll(refresh: boolean) {
+    try {
+      await scoreM.mutateAsync(refresh)
+      await suggestM.mutateAsync(refresh)
+    } catch {
+      // mutation onError handlers already toast
+    }
   }
+
+  const isPending = scoreM.isPending || suggestM.isPending
+  const hasAny = score !== null || suggestions !== null
 
   return (
     <div className="space-y-4">
@@ -72,9 +146,11 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
         <h3 className="font-semibold flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" /> AI Assistant
         </h3>
-        <Button size="sm" variant="ghost" onClick={refresh} disabled={scoreM.isPending || suggestM.isPending}>
-          <RefreshCw className={`h-3.5 w-3.5 ${scoreM.isPending ? "animate-spin" : ""}`} />
-        </Button>
+        {hasAny && (
+          <Button size="sm" variant="ghost" onClick={() => runAll(true)} disabled={isPending}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -82,7 +158,7 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
           <CardTitle className="text-sm">Deal Score</CardTitle>
         </CardHeader>
         <CardContent>
-          {scoreM.isPending && !score ? (
+          {scoreM.isPending ? (
             <Skeleton className="h-24 w-full" />
           ) : score ? (
             <div className="space-y-3">
@@ -117,7 +193,12 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
               )}
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground">No score available</div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">No score yet.</p>
+              <Button size="sm" variant="secondary" onClick={() => scoreM.mutate(false)} disabled={scoreM.isPending}>
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Run AI score
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -127,7 +208,7 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
           <CardTitle className="text-sm">Suggested actions</CardTitle>
         </CardHeader>
         <CardContent>
-          {suggestM.isPending && !suggestions ? (
+          {suggestM.isPending ? (
             <Skeleton className="h-24 w-full" />
           ) : suggestions ? (
             <ul className="space-y-2">
@@ -147,7 +228,12 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-muted-foreground">No suggestions</div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">No suggestions yet.</p>
+              <Button size="sm" variant="secondary" onClick={() => suggestM.mutate(false)} disabled={suggestM.isPending}>
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Suggest next steps
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -163,7 +249,13 @@ export function AIAssistantPanel({ dealId }: { dealId: string }) {
         </CardContent>
       </Card>
 
-      <EmailComposer open={composeOpen} onOpenChange={setComposeOpen} dealId={dealId} />
+      <EmailComposer
+        open={composeOpen}
+        onOpenChange={setComposeOpen}
+        dealId={dealId}
+        contactId={cachedQ.data?.contact?.id}
+        contactEmail={cachedQ.data?.contact?.email}
+      />
     </div>
   )
 }

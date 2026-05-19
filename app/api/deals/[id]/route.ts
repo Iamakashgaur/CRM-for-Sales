@@ -1,8 +1,23 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { parseTags, stringifyTags, daysBetween } from "@/lib/utils"
+import { isClosedStage } from "@/lib/stage-helpers"
+import { safeError } from "@/lib/api-errors"
+import { parseAIInsight } from "@/lib/ai"
+import { isPrivileged, ROLES } from "@/lib/constants"
+
+interface ScorePayload {
+  score: number
+  confidence: "low" | "medium" | "high"
+  reasoning: string
+  risks: string[]
+  opportunities: string[]
+}
+interface SuggestionPayload {
+  actions: Array<{ title: string; description: string; priority: "low" | "medium" | "high"; type: string }>
+}
 
 export const dynamic = "force-dynamic"
 
@@ -36,22 +51,28 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     })
     if (!deal) return NextResponse.json({ error: "Not found" }, { status: 404 })
     // REP: only own deals visible
-    if (session.user.role === "REP" && deal.ownerId !== session.user.id) {
+    if (session.user.role === ROLES.REP && deal.ownerId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const stageChangeActivity = deal.activities.find((a) => a.subject.startsWith("Stage changed"))
-    const sinceDate = stageChangeActivity ? stageChangeActivity.createdAt : deal.createdAt
-    const daysInStage = daysBetween(sinceDate)
+    const daysInStage = daysBetween(deal.stageEnteredAt)
+
+    // aiInsights is ordered desc by createdAt; find() returns the most-recent match per type.
+    const latestScoreInsight = deal.aiInsights.find((i) => i.type === "SCORE")
+    const latestSuggestInsight = deal.aiInsights.find((i) => i.type === "SUGGESTION")
+    const latestScore = latestScoreInsight ? parseAIInsight<ScorePayload>(latestScoreInsight) : null
+    const latestSuggestions = latestSuggestInsight ? parseAIInsight<SuggestionPayload>(latestSuggestInsight) : null
 
     return NextResponse.json({
       ...deal,
       tags: parseTags(deal.tags),
       contact: { ...deal.contact, tags: parseTags(deal.contact.tags) },
       daysInStage,
+      latestScore,
+      latestSuggestions,
     })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -70,8 +91,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const data = parsed.data
     const updateData: Record<string, unknown> = {}
     let stageChanged = false
-    let oldStageName = existing.stage
+    const oldStageName = existing.stage
     let newStageName = existing.stage
+
+    // REP scope: cannot modify foreign deals
+    if (session.user.role === ROLES.REP && existing.ownerId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+    const canAssign = isPrivileged(session.user.role)
 
     if (data.stageId && data.stageId !== existing.stageId) {
       const stage = await prisma.stage.findUnique({ where: { id: data.stageId } })
@@ -79,10 +106,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       updateData.stageId = stage.id
       updateData.stage = stage.name
       updateData.probability = stage.probability
+      updateData.stageEnteredAt = new Date()
       newStageName = stage.name
       stageChanged = true
-      if (stage.name === "Closed Won" || stage.name === "Closed Lost") {
+      if (isClosedStage(stage.name)) {
         updateData.actualCloseDate = new Date()
+      } else if (isClosedStage(existing.stage)) {
+        // Reopening a previously-closed deal: clear actualCloseDate
+        updateData.actualCloseDate = null
       }
     }
 
@@ -90,8 +121,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (data.value !== undefined) updateData.value = data.value
     if (data.currency !== undefined) updateData.currency = data.currency
     if (data.contactId !== undefined) updateData.contactId = data.contactId
-    if (data.ownerId !== undefined) updateData.ownerId = data.ownerId
-    if (data.probability !== undefined && !stageChanged) updateData.probability = data.probability
+    // REPs cannot reassign ownership
+    if (data.ownerId !== undefined && canAssign) updateData.ownerId = data.ownerId
+    // Allow explicit probability override; if stage changed it set a default, override wins.
+    if (data.probability !== undefined) updateData.probability = data.probability
     if (data.tags !== undefined) updateData.tags = stringifyTags(data.tags)
     if (data.expectedCloseDate !== undefined)
       updateData.expectedCloseDate = data.expectedCloseDate ? new Date(data.expectedCloseDate) : null
@@ -104,6 +137,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       await prisma.activity.create({
         data: {
           type: "NOTE",
+          kind: "stage_change",
           subject: `Stage changed to ${newStageName}`,
           body: `${oldStageName} → ${newStageName}`,
           dealId: updated.id,
@@ -115,7 +149,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     return NextResponse.json({ ...updated, tags: parseTags(updated.tags) })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -127,17 +161,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const existing = await prisma.deal.findUnique({ where: { id: params.id } })
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
-    if (
-      session.user.role !== "ADMIN" &&
-      session.user.role !== "MANAGER" &&
-      existing.ownerId !== session.user.id
-    ) {
+    if (!isPrivileged(session.user.role) && existing.ownerId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     await prisma.deal.delete({ where: { id: params.id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

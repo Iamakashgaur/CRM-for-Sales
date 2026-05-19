@@ -62,7 +62,8 @@ export async function exchangeOutlookCode(code: string, redirectUri: string): Pr
         const me = await meRes.json()
         email = me.mail ?? me.userPrincipalName ?? null
       }
-    } catch {
+    } catch (e) {
+      console.warn("Outlook profile fetch failed:", (e as Error).message)
       email = null
     }
 
@@ -72,7 +73,8 @@ export async function exchangeOutlookCode(code: string, redirectUri: string): Pr
       expiresIn: data.expires_in ?? 3600,
       email,
     }
-  } catch {
+  } catch (e) {
+    console.warn("Outlook code exchange failed:", (e as Error).message)
     return { accessToken: "", refreshToken: null, expiresIn: 0, email: null }
   }
 }
@@ -94,37 +96,84 @@ export async function refreshOutlookToken(refreshToken: string): Promise<string 
     if (!res.ok) return null
     const data = await res.json()
     return data.access_token ?? null
-  } catch {
+  } catch (e) {
+    console.warn("Outlook token refresh failed:", (e as Error).message)
     return null
   }
+}
+
+interface OutlookAuthCtx {
+  syncId: string
+  accessToken: string
+  refreshToken: string | null
+}
+
+async function fetchWithOutlookRefresh(url: string, ctx: OutlookAuthCtx): Promise<Response> {
+  let token = ctx.accessToken
+  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (res.status === 401 && ctx.refreshToken) {
+    const newToken = await refreshOutlookToken(ctx.refreshToken)
+    if (newToken) {
+      token = newToken
+      ctx.accessToken = newToken
+      try {
+        const { prisma } = await import("./prisma")
+        const { encrypt } = await import("./crypto")
+        await prisma.emailSync.update({ where: { id: ctx.syncId }, data: { accessToken: encrypt(newToken) } })
+      } catch (e) {
+        console.warn("Outlook token persist failed:", (e as Error).message)
+      }
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    }
+  }
+  return res
 }
 
 export async function fetchOutlookMessagesByContact(
   accessToken: string,
   contactEmail: string,
-  max = 25
+  max = 25,
+  authCtx?: { syncId: string; refreshToken: string | null }
 ): Promise<OutlookMessage[]> {
   try {
     if (!accessToken || !contactEmail) return []
+    const ctx: OutlookAuthCtx = {
+      syncId: authCtx?.syncId ?? "",
+      accessToken,
+      refreshToken: authCtx?.refreshToken ?? null,
+    }
     const filter = encodeURIComponent(
       `(from/emailAddress/address eq '${contactEmail}') or (toRecipients/any(r:r/emailAddress/address eq '${contactEmail}'))`
     )
     const url = `${GRAPH_API}/me/messages?$top=${max}&$filter=${filter}&$select=id,subject,from,toRecipients,body,receivedDateTime`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+    const res = ctx.syncId
+      ? await fetchWithOutlookRefresh(url, ctx)
+      : await fetch(url, { headers: { Authorization: `Bearer ${ctx.accessToken}` } })
     if (!res.ok) return []
     const data = await res.json()
-    const items: any[] = data.value ?? []
+    interface OutlookRecipient { emailAddress?: { address?: string } }
+    interface OutlookRaw {
+      id: string
+      subject?: string
+      from?: { emailAddress?: { address?: string } }
+      toRecipients?: OutlookRecipient[]
+      body?: { content?: string }
+      receivedDateTime?: string
+    }
+    const items: OutlookRaw[] = data.value ?? []
     return items.map((m) => ({
       id: m.id,
       subject: m.subject ?? "(no subject)",
       from: m.from?.emailAddress?.address ?? "",
-      to: (m.toRecipients ?? []).map((r: any) => r.emailAddress?.address).filter(Boolean).join(", "),
+      to: (m.toRecipients ?? [])
+        .map((r) => r.emailAddress?.address)
+        .filter((s): s is string => !!s)
+        .join(", "),
       body: m.body?.content ?? "",
       receivedAt: new Date(m.receivedDateTime ?? Date.now()),
     }))
-  } catch {
+  } catch (e) {
+    console.warn("Outlook list fetch failed:", (e as Error).message)
     return []
   }
 }

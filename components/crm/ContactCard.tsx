@@ -22,7 +22,7 @@ export function ContactCard({ contact }: { contact: ContactCardData }) {
       <Card className="hover:border-primary/40 hover:shadow-md transition-all">
         <CardContent className="p-4 flex items-center gap-3">
           <Avatar className="h-10 w-10 shrink-0">
-            <AvatarFallback className={cn("text-white text-sm", avatarColor(contact.name))}>
+            <AvatarFallback className="text-white text-sm" style={{ backgroundColor: avatarColor(contact.name) }}>
               {getInitials(contact.name)}
             </AvatarFallback>
           </Avatar>

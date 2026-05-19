@@ -31,15 +31,24 @@ export function EmailComposer({ open, onOpenChange, dealId, contactId, contactEm
   const [subject, setSubject] = React.useState("")
   const [body, setBody] = React.useState("")
   const [purpose, setPurpose] = React.useState<"follow-up" | "proposal" | "closing" | "introduction">("follow-up")
+  const [language, setLanguage] = React.useState<"en" | "hi" | "hinglish">("en")
 
-  React.useEffect(() => { if (contactEmail) setTo(contactEmail) }, [contactEmail])
+  React.useEffect(() => {
+    if (open) {
+      setTo(contactEmail ?? "")
+      setSubject("")
+      setBody("")
+      setPurpose("follow-up")
+      setLanguage("en")
+    }
+  }, [open, contactEmail])
 
   const gen = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/ai/draft-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, purpose }),
+        body: JSON.stringify({ dealId, purpose, language }),
       })
       if (!res.ok) throw new Error("AI draft failed")
       return res.json() as Promise<{ subject: string; body: string; tone: string }>
@@ -95,6 +104,17 @@ export function EmailComposer({ open, onOpenChange, dealId, contactId, contactEm
                   <SelectItem value="proposal">Send proposal</SelectItem>
                   <SelectItem value="closing">Closing</SelectItem>
                   <SelectItem value="introduction">Introduction</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-40 space-y-2">
+              <Label>Language</Label>
+              <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="hi">Hindi (हिन्दी)</SelectItem>
+                  <SelectItem value="hinglish">Hinglish</SelectItem>
                 </SelectContent>
               </Select>
             </div>

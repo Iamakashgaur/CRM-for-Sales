@@ -4,7 +4,7 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)) }
 
 export function formatCurrency(value: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value)
 }
 
 export function formatDate(date: Date | string | null | undefined): string {
@@ -37,9 +37,30 @@ export function daysBetween(a: Date | string, b: Date | string = new Date()): nu
   return Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
 }
 
+const AVATAR_COLORS = [
+  "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e",
+  "#10b981", "#14b8a6", "#06b6d4", "#0ea5e9", "#3b82f6", "#6366f1",
+  "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
+]
+
 export function avatarColor(name: string): string {
-  const colors = ["bg-red-500", "bg-orange-500", "bg-amber-500", "bg-yellow-500", "bg-lime-500", "bg-green-500", "bg-emerald-500", "bg-teal-500", "bg-cyan-500", "bg-sky-500", "bg-blue-500", "bg-indigo-500", "bg-violet-500", "bg-purple-500", "bg-fuchsia-500", "bg-pink-500", "bg-rose-500"]
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i)
-  return colors[Math.abs(hash) % colors.length]
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+export function avatarStyle(name: string): { backgroundColor: string } {
+  return { backgroundColor: avatarColor(name) }
+}
+
+/** Normalize Indian phone numbers: strip non-digits; if 10-digit, prepend 91. */
+export function normalizePhone(s: string): string {
+  if (!s) return s
+  const digits = s.replace(/\D/g, "")
+  if (digits.length === 10) return `91${digits}`
+  if (digits.length === 11 && digits.startsWith("0")) {
+    const rest = digits.slice(1)
+    return `91${rest}`
+  }
+  return digits
 }

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient, Prisma } from "@prisma/client"
 import * as XLSX from "xlsx"
 import path from "path"
 
@@ -101,7 +101,7 @@ async function main() {
   let skipped = 0
   let placeholders = 0
   const seenKeys = new Set<string>()
-  const batch: Array<Parameters<typeof prisma.contact.create>[0]["data"]> = []
+  const batch: Prisma.ContactCreateManyInput[] = []
   const BATCH_SIZE = 500
 
   for (const row of rows) {
@@ -154,13 +154,22 @@ async function main() {
       name,
       email,
       phone: mobile,
+      phoneSecondary: altPhone,
       company,
       title: personRaw && company ? "Primary contact" : null,
       source: "Zone Data Import",
       tags: JSON.stringify(tags),
-      notes: notesParts.join("\n") || null,
+      notes: null,
+      addressLine1: addr1,
+      addressLine2: addr2,
+      city,
+      state,
+      pinCode: pin,
+      zone,
+      type,
       website: website && !website.startsWith("http") ? `https://${website}` : website,
-      linkedinUrl: social && social.includes("linkedin") ? social : null,
+      linkedinUrl: social && social.toLowerCase().includes("linkedin") ? social : null,
+      socialUrl: social && !social.toLowerCase().includes("linkedin") ? social : null,
       ownerId: admin.id,
     })
 

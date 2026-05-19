@@ -11,7 +11,9 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "db:backup": "tsx scripts/backup-db.ts",
+    "db:cleanup-ai": "tsx scripts/cleanup-ai-insights.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -22,6 +24,7 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@prisma/client": "^5.22.0",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.0",
     "@radix-ui/react-checkbox": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.1",
@@ -43,7 +46,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.400.0",
-    "next": "14.2.15",
+    "next": "14.2.30",
     "next-auth": "^4.24.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

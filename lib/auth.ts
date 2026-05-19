@@ -3,9 +3,14 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { getServerSession as nextAuthGetServerSession } from "next-auth"
 import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
+import { rateLimit } from "@/lib/rate-limit"
+
+// Constant-time dummy hash used when the user doesn't exist, so the response
+// time is comparable to the real-user path (prevents email enumeration).
+const DUMMY_HASH = "$2a$12$abcdefghijklmnopqrstuv1234567890abcdefghijklmno"
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30 },
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 7 },
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
@@ -16,10 +21,12 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
-        const user = await prisma.user.findUnique({ where: { email: credentials.email.toLowerCase() } })
-        if (!user) return null
-        const ok = await bcrypt.compare(credentials.password, user.passwordHash)
-        if (!ok) return null
+        const email = credentials.email.toLowerCase()
+        if (!rateLimit(`login:${email}`, 10, 60_000)) return null
+        const user = await prisma.user.findUnique({ where: { email } })
+        const hash = user?.passwordHash ?? DUMMY_HASH
+        const ok = await bcrypt.compare(credentials.password, hash)
+        if (!user || !ok) return null
         return { id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar ?? null }
       },
     }),
@@ -27,17 +34,17 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = (user as any).id
-        token.role = (user as any).role
-        token.avatar = (user as any).avatar ?? null
+        token.id = user.id
+        token.role = user.role
+        token.avatar = user.avatar ?? null
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        ;(session.user as any).id = token.id
-        ;(session.user as any).role = token.role
-        ;(session.user as any).avatar = token.avatar ?? null
+        session.user.id = token.id
+        session.user.role = token.role
+        session.user.avatar = token.avatar ?? null
       }
       return session
     },
@@ -50,7 +57,7 @@ export function getServerSession() {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10)
+  return bcrypt.hash(password, 12)
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {

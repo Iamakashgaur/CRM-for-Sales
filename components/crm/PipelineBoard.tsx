@@ -8,6 +8,7 @@ import {
   DragOverlay,
   DragStartEvent,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -28,6 +29,7 @@ interface Stage {
   order: number
   color: string
   probability: number
+  isClosed?: boolean
 }
 
 interface DealWire extends DealCardData {
@@ -48,20 +50,20 @@ function Column({
     <div
       ref={setNodeRef}
       className={cn(
-        "w-[300px] shrink-0 flex flex-col rounded-xl bg-muted/40 transition-all duration-150",
-        isOver && "ring-2 ring-accent/40 bg-accent/5"
+        "min-w-[240px] flex flex-col rounded-xl bg-muted/40 transition-all duration-180 ease-out-soft",
+        isOver && "ring-2 ring-accent/30 bg-accent/5"
       )}
     >
-      <div className="px-3 py-3 sticky top-0 bg-muted/60 backdrop-blur rounded-t-xl z-10">
+      <div className="px-3 py-2.5 sticky top-0 bg-muted/70 backdrop-blur-md rounded-t-xl z-10 border-b border-border/40">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: stage.color }} />
-            <span className="font-semibold text-[13px] truncate">{stage.name}</span>
-            <span className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-background text-[10px] font-medium text-muted-foreground">
+            <span className="h-2 w-2 rounded-full shrink-0 ring-2 ring-background" style={{ background: stage.color }} />
+            <span className="font-semibold text-[12px] tracking-tight truncate">{stage.name}</span>
+            <span className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full bg-background text-[10px] font-medium text-muted-foreground tabular-nums">
               {deals.length}
             </span>
           </div>
-          <div className="text-[11px] text-muted-foreground tabular-nums shrink-0">{formatCurrency(total)}</div>
+          <div className="text-[11px] font-medium text-foreground tabular-nums shrink-0">{formatCurrency(total)}</div>
         </div>
       </div>
       <SortableContext id={stage.id} items={deals.map((d) => d.id)} strategy={verticalListSortingStrategy}>
@@ -70,7 +72,9 @@ function Column({
             <DealCard key={d.id} deal={d} />
           ))}
           {deals.length === 0 && (
-            <div className="text-xs text-muted-foreground text-center py-8">Drop deals here</div>
+            <div className="m-2 rounded-lg border border-dashed border-border/70 py-10 px-3 text-center">
+              <p className="text-[11px] text-muted-foreground">Drop deals here</p>
+            </div>
           )}
         </div>
       </SortableContext>
@@ -95,16 +99,22 @@ export function PipelineBoard() {
   const dealsQ = useQuery<{ deals: DealWire[] }>({
     queryKey: ["deals", "pipeline"],
     queryFn: async () => {
-      const res = await fetch("/api/deals?limit=500")
+      const res = await fetch("/api/deals?slim=true&limit=1000")
       if (!res.ok) throw new Error("Failed")
       return res.json()
     },
   })
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  )
 
-  const move = useMutation({
-    mutationFn: async ({ id, stageId }: { id: string; stageId: string }) => {
+  interface MoveVars { id: string; stageId: string; newStage: Stage }
+  interface MoveCtx { prev: { deals: DealWire[] } | undefined }
+
+  const move = useMutation<unknown, Error, MoveVars, MoveCtx>({
+    mutationFn: async ({ id, stageId }: MoveVars) => {
       const res = await fetch(`/api/deals/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -113,13 +123,41 @@ export function PipelineBoard() {
       if (!res.ok) throw new Error("Move failed")
       return res.json()
     },
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ["deals", "pipeline"] })
+      const prev = qc.getQueryData<{ deals: DealWire[] }>(["deals", "pipeline"])
+      qc.setQueryData<{ deals: DealWire[] }>(["deals", "pipeline"], (old) => {
+        if (!old) return old
+        return {
+          deals: old.deals.map((d) => {
+            if (d.id !== vars.id) return d
+            const targetClosed = vars.newStage.isClosed ?? (vars.newStage.probability === 100 || vars.newStage.probability === 0)
+            const wasClosed = d.probability === 100 || d.probability === 0
+            const nowIso = new Date().toISOString()
+            const next: DealWire = {
+              ...d,
+              stageId: vars.newStage.id,
+              stage: vars.newStage.name,
+              probability: vars.newStage.probability,
+              stageEnteredAt: nowIso,
+            }
+            if (targetClosed) next.actualCloseDate = nowIso
+            else if (wasClosed) next.actualCloseDate = null
+            return next
+          }),
+        }
+      })
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["deals", "pipeline"], ctx.prev)
+      toast.error("Failed to move deal")
+    },
     onSuccess: () => {
       toast.success("Deal moved")
-      qc.invalidateQueries({ queryKey: ["deals"] })
     },
-    onError: (e: Error) => {
-      toast.error(e.message)
-      qc.invalidateQueries({ queryKey: ["deals"] })
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["deals", "pipeline"] })
     },
   })
 
@@ -148,15 +186,7 @@ export function PipelineBoard() {
     const newStage = stagesQ.data.stages.find((s) => s.id === targetStageId)
     if (!newStage) return
 
-    qc.setQueryData<{ deals: DealWire[] }>(["deals", "pipeline"], (old) => {
-      if (!old) return old
-      return {
-        deals: old.deals.map((d) =>
-          d.id === activeDeal.id ? { ...d, stageId: newStage.id, stage: newStage.name, probability: newStage.probability } : d
-        ),
-      }
-    })
-    move.mutate({ id: activeDeal.id, stageId: newStage.id })
+    move.mutate({ id: activeDeal.id, stageId: newStage.id, newStage })
   }
 
   const loading = stagesQ.isLoading || dealsQ.isLoading
@@ -171,8 +201,8 @@ export function PipelineBoard() {
     <div className="flex flex-col h-full gap-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Pipeline</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Drag deals between stages to update them</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
+          <p className="text-[13px] text-muted-foreground mt-1">Drag deals between stages to update them</p>
         </div>
         <div className="flex items-center gap-2">
           <Input
@@ -187,20 +217,30 @@ export function PipelineBoard() {
         </div>
       </div>
 
+      {dealsAll.length >= 1000 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+          Showing first 1000 deals. Use filters to narrow results.
+        </div>
+      )}
+
       {loading ? (
-        <div className="flex gap-4 overflow-x-auto">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="w-[300px] h-[400px] shrink-0" />
-          ))}
+        <div className="overflow-x-auto">
+          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${stages.length || 6}, minmax(240px, 1fr))` }}>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Skeleton key={i} className="h-[400px]" />
+            ))}
+          </div>
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-          <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
-            <SortableContext items={stages.map((s) => `col-${s.id}`)}>
-              {stages.map((st) => (
-                <Column key={st.id} stage={st} deals={deals.filter((d) => d.stageId === st.id)} />
-              ))}
-            </SortableContext>
+          <div className="overflow-x-auto pb-4 flex-1">
+            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${stages.length || 6}, minmax(240px, 1fr))` }}>
+              <SortableContext items={stages.map((s) => `col-${s.id}`)}>
+                {stages.map((st) => (
+                  <Column key={st.id} stage={st} deals={deals.filter((d) => d.stageId === st.id)} />
+                ))}
+              </SortableContext>
+            </div>
           </div>
           <DragOverlay>{activeDeal ? <DealCard deal={activeDeal} /> : null}</DragOverlay>
         </DndContext>

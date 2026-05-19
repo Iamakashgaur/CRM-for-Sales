@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { safeError } from "@/lib/api-errors"
+import { suggestStageForActivity } from "@/lib/stage-suggest"
 
 export const dynamic = "force-dynamic"
 
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
     const session = await getServerSession()
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { searchParams } = new URL(req.url)
+    const searchParams = req.nextUrl.searchParams
     const contactId = searchParams.get("contactId") || undefined
     const dealId = searchParams.get("dealId") || undefined
     const userId = searchParams.get("userId") || undefined
@@ -30,6 +32,26 @@ export async function GET(req: NextRequest) {
     if (contactId) where.contactId = contactId
     if (dealId) where.dealId = dealId
     if (userId) where.userId = userId
+    // REP scope: own activities OR activities on contacts/deals they own
+    if (session.user.role === "REP") {
+      if (contactId) {
+        const c = await prisma.contact.findUnique({ where: { id: contactId }, select: { ownerId: true } })
+        if (c && c.ownerId !== session.user.id) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        }
+      }
+      if (dealId) {
+        const d = await prisma.deal.findUnique({ where: { id: dealId }, select: { ownerId: true } })
+        if (d && d.ownerId !== session.user.id) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        }
+      }
+      where.OR = [
+        { userId: session.user.id },
+        { contact: { ownerId: session.user.id } },
+        { deal: { ownerId: session.user.id } },
+      ]
+    }
 
     const activities = await prisma.activity.findMany({
       where,
@@ -39,7 +61,7 @@ export async function GET(req: NextRequest) {
     })
     return NextResponse.json({ activities })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -65,8 +87,12 @@ export async function POST(req: NextRequest) {
         userId: session.user.id,
       },
     })
+    // Fire-and-forget: analyse the activity for a possible stage move suggestion.
+    if (created.dealId) {
+      void suggestStageForActivity(created.id)
+    }
     return NextResponse.json(created, { status: 201 })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

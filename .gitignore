@@ -19,6 +19,9 @@ prisma/*.db-journal
 crm.db
 crm.db-journal
 
+# DB backups
+backups/
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

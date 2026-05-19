@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { parseTags } from "@/lib/utils"
+import { safeError } from "@/lib/api-errors"
 
 export const dynamic = "force-dynamic"
 
@@ -10,9 +11,9 @@ export async function GET(req: NextRequest) {
     const session = await getServerSession()
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { searchParams } = new URL(req.url)
+    const searchParams = req.nextUrl.searchParams
     const q = searchParams.get("q")?.trim() || ""
-    if (!q) return NextResponse.json({ contacts: [], deals: [] })
+    if (q.length < 2) return NextResponse.json({ contacts: [], deals: [] })
 
     const isRep = session.user.role === "REP"
     const repScope = isRep ? { ownerId: session.user.id } : {}
@@ -45,6 +46,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ contacts, deals })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { safeError } from "@/lib/api-errors"
 
 export const dynamic = "force-dynamic"
 
@@ -21,6 +22,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const existing = await prisma.activity.findUnique({ where: { id: params.id } })
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
+    // REP scope: only own activities (ADMIN/MANAGER may edit any)
+    if (
+      session.user.role !== "ADMIN" &&
+      session.user.role !== "MANAGER" &&
+      existing.userId !== session.user.id
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
     const body = await req.json()
     const parsed = updateSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
@@ -37,7 +47,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const updated = await prisma.activity.update({ where: { id: params.id }, data: updateData })
     return NextResponse.json(updated)
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -60,6 +70,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     await prisma.activity.delete({ where: { id: params.id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

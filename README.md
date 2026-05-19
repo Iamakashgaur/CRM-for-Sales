@@ -1,4 +1,4 @@
-# CRM Pro
+# Karat — Sales CRM
 
 An AI-powered B2B CRM built with Next.js 14, Prisma (SQLite), NextAuth, and Claude. Pipeline drag-and-drop, contact/deal management, activity tracking, AI deal scoring + action suggestions + email drafting, analytics dashboard, and optional Gmail/Outlook sync.
 
@@ -48,7 +48,7 @@ App runs at http://localhost:3000.
 - Global Cmd-K command palette: instant fuzzy search across contacts and deals
 - Role-based access (ADMIN/MANAGER/REP), JWT-backed sessions
 - Optional Gmail and Outlook OAuth email sync
-- Dark theme by default
+- Light theme by default
 
 ## Architecture
 
@@ -93,7 +93,7 @@ app/
     settings/           profile, users, stages, email sync
   api/                  route handlers (contacts, deals, activities, stages,
                         users, search, analytics, ai/*, email-sync/*)
-  layout.tsx            root (Inter font, dark, providers)
+  layout.tsx            root (Inter font, light theme, providers)
   providers.tsx         QueryClient, SessionProvider, TooltipProvider, Toaster
 components/
   ui/                   shadcn primitives (button, dialog, table, ...)
@@ -141,6 +141,13 @@ middleware.ts           NextAuth route guard
 - `npm run db:seed` — seed demo data
 - `npm run db:studio` — open Prisma Studio
 - `npm run db:reset` — reset DB and re-seed
+- `npm run db:backup` — copy `prisma/crm.db` into `backups/` with a timestamp
+- `npm run db:cleanup-ai` — delete AIInsight rows older than 30 days
+
+## Deployment notes
+
+- When running behind a reverse proxy or on a non-localhost URL, set `NEXTAUTH_URL` explicitly in `.env` (e.g. `NEXTAUTH_URL=https://crm.example.com`). Otherwise NextAuth will sign callbacks against the proxied host and OAuth/email redirects can break.
+- `GET /api/health` returns `{ ok, db }` for uptime checks. This route is intentionally excluded from the auth middleware.
 
 ## License
 

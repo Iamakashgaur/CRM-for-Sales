@@ -34,7 +34,6 @@ export interface Stage {
   order: number
   color: string
   probability: number
-  isDefault: boolean
 }
 
 export interface Deal {

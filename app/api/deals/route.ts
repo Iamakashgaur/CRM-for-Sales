@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { parseTags, stringifyTags } from "@/lib/utils"
+import { safeError } from "@/lib/api-errors"
+import { rateLimit } from "@/lib/rate-limit"
 
 export const dynamic = "force-dynamic"
 
@@ -23,7 +25,11 @@ export async function GET(req: NextRequest) {
     const session = await getServerSession()
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { searchParams } = new URL(req.url)
+    if (!rateLimit(`list:${session.user.id}`, 120, 60_000)) {
+      return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+    }
+
+    const searchParams = req.nextUrl.searchParams
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1)
     const limit = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "100", 10) || 100))
     const stage = searchParams.get("stage") || undefined
@@ -32,6 +38,8 @@ export async function GET(req: NextRequest) {
     const minValue = searchParams.get("minValue")
     const maxValue = searchParams.get("maxValue")
     const q = searchParams.get("q")?.trim() || ""
+
+    const slim = searchParams.get("slim") === "true"
 
     const where: Record<string, unknown> = {}
     if (stage) where.stage = stage
@@ -48,9 +56,35 @@ export async function GET(req: NextRequest) {
     if (Object.keys(valueFilter).length) where.value = valueFilter
     if (q) where.title = { contains: q }
 
-    const [total, rows] = await Promise.all([
-      prisma.deal.count({ where }),
-      prisma.deal.findMany({
+    const slimSelect = {
+      id: true,
+      title: true,
+      value: true,
+      currency: true,
+      probability: true,
+      stage: true,
+      stageId: true,
+      expectedCloseDate: true,
+      ownerId: true,
+      contactId: true,
+      stageEnteredAt: true,
+      updatedAt: true,
+      contact: { select: { id: true, name: true, company: true } },
+      owner: { select: { id: true, name: true, avatar: true } },
+    } as const
+
+    const total = await prisma.deal.count({ where })
+    let deals: unknown
+    if (slim) {
+      deals = await prisma.deal.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: slimSelect,
+      })
+    } else {
+      const rows = await prisma.deal.findMany({
         where,
         orderBy: { updatedAt: "desc" },
         skip: (page - 1) * limit,
@@ -59,9 +93,9 @@ export async function GET(req: NextRequest) {
           contact: { select: { id: true, name: true, company: true, email: true } },
           owner: { select: { id: true, name: true, avatar: true } },
         },
-      }),
-    ])
-    const deals = rows.map((d) => ({ ...d, tags: parseTags(d.tags) }))
+      })
+      deals = rows.map((d) => ({ ...d, tags: parseTags(d.tags) }))
+    }
     return NextResponse.json({
       deals,
       total,
@@ -70,7 +104,7 @@ export async function GET(req: NextRequest) {
       limit,
     })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -90,7 +124,8 @@ export async function POST(req: NextRequest) {
     const contact = await prisma.contact.findUnique({ where: { id: data.contactId } })
     if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 })
 
-    const ownerId = data.ownerId ?? session.user.id
+    const isPrivileged = ["ADMIN", "MANAGER"].includes(session.user.role)
+    const ownerId = isPrivileged ? (data.ownerId ?? session.user.id) : session.user.id
 
     const created = await prisma.deal.create({
       data: {
@@ -121,6 +156,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ...created, tags: parseTags(created.tags) }, { status: 201 })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

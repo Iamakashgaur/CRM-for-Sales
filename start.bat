@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo Starting CRM Pro (Next.js)...
+echo Starting Karat - Sales CRM (Next.js)...
 echo.
 echo Open browser at: http://localhost:3000
 echo Login: admin@crm.com / Admin1234!

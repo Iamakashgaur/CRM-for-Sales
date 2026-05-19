@@ -1,15 +1,28 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { exchangeOutlookCode } from "@/lib/outlook"
+import { getServerSession } from "@/lib/auth"
+import { verifyState } from "@/lib/oauth-state"
+import { safeError } from "@/lib/api-errors"
+import { encrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
+    const searchParams = req.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
     if (!code || !state) return NextResponse.json({ error: "Missing code or state" }, { status: 400 })
+
+    const verified = verifyState(state)
+    if (!verified) return NextResponse.json({ error: "Invalid or expired state" }, { status: 400 })
+
+    const session = await getServerSession()
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (session.user.id !== verified.userId) {
+      return NextResponse.json({ error: "State user mismatch" }, { status: 403 })
+    }
 
     const base = process.env.NEXTAUTH_URL ?? new URL(req.url).origin
     const redirectUri = `${base}/api/email-sync/outlook/callback`
@@ -18,7 +31,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${base}/settings?outlook=error`)
     }
 
-    const userId = state
+    const userId = verified.userId
     const email = tokens.email ?? "unknown"
 
     await prisma.emailSync.upsert({
@@ -26,19 +39,19 @@ export async function GET(req: NextRequest) {
       create: {
         userId,
         provider: "OUTLOOK",
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: encrypt(tokens.accessToken),
+        refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
         email,
       },
       update: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: encrypt(tokens.accessToken),
+        refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
         email,
       },
     })
 
     return NextResponse.redirect(`${base}/settings?outlook=connected`)
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

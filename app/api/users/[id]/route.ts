@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession, hashPassword } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { safeError } from "@/lib/api-errors"
 
 export const dynamic = "force-dynamic"
 
@@ -47,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     })
     return NextResponse.json(updated)
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -71,9 +72,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       }
     }
 
+    const [contactCount, dealCount, activityCount] = await Promise.all([
+      prisma.contact.count({ where: { ownerId: params.id } }),
+      prisma.deal.count({ where: { ownerId: params.id } }),
+      prisma.activity.count({ where: { userId: params.id } }),
+    ])
+    if (contactCount + dealCount + activityCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete user with owned records (${contactCount} contacts, ${dealCount} deals, ${activityCount} activities). Reassign first.`,
+        },
+        { status: 409 }
+      )
+    }
+
     await prisma.user.delete({ where: { id: params.id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

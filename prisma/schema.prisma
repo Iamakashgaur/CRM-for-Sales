@@ -22,33 +22,86 @@ model User {
   activities    Activity[]
   emailSyncs    EmailSync[]
   aiInsights    AIInsight[]
+  callLogs      CallLog[]
 }
 
 model Contact {
-  id          String   @id @default(cuid())
-  name        String
-  email       String
-  phone       String?
-  company     String?
-  title       String?
-  source      String?
-  tags        String   @default("[]")
-  notes       String?
-  linkedinUrl String?
-  website     String?
-  ownerId     String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  email            String
+  phone            String?
+  phoneSecondary   String?
+  altPhone         String?
+  company          String?
+  title            String?
+  source           String?
+  tags             String    @default("[]")
+  notes            String?
+  linkedinUrl      String?
+  socialUrl        String?
+  website          String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  pinCode          String?
+  zone             String?
+  type             String?
+  ownerId          String
+  dnc              Boolean   @default(false)
+  category         String?
+  callStatus       String?
+  followUpStatus   String?
+  lastContactDate  DateTime?
+  nextFollowUpDate DateTime?
+  nextFollowUpTime String?
+  embedding        String?
+  embeddingAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   owner      User               @relation("ContactOwner", fields: [ownerId], references: [id])
   deals      Deal[]
   activities Activity[]
   aiInsights AIInsight[]
   emailMsgs  EmailSyncMessage[]
+  callLogs   CallLog[]
+  whatsappMessages WhatsAppMessage[]
 
+  @@unique([ownerId, email])
   @@index([ownerId])
   @@index([email])
   @@index([company])
+  @@index([category])
+  @@index([nextFollowUpDate])
+  @@index([city])
+  @@index([state])
+  @@index([zone])
+  @@index([type])
+  @@index([updatedAt])
+  @@index([embeddingAt])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model CallLog {
+  id        String   @id @default(cuid())
+  contactId String
+  status    String
+  notes     String?
+  userId    String?
+  at        DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([at])
+  @@index([userId])
 }
 
 model Stage {
@@ -57,7 +110,6 @@ model Stage {
   order       Int     @unique
   color       String  @default("#6366f1")
   probability Int     @default(50)
-  isDefault   Boolean @default(false)
 
   deals Deal[]
 }
@@ -67,11 +119,13 @@ model Deal {
   title             String
   value             Float     @default(0)
   currency          String    @default("USD")
+  /// Denormalized stage name; kept in sync via stage rename. Planned removal in favor of join through stageRef.
   stage             String
   stageId           String
   probability       Int       @default(50)
   expectedCloseDate DateTime?
   actualCloseDate   DateTime?
+  stageEnteredAt    DateTime  @default(now())
   contactId         String
   ownerId           String
   tags              String    @default("[]")
@@ -89,11 +143,13 @@ model Deal {
   @@index([ownerId])
   @@index([stageId])
   @@index([contactId])
+  @@index([updatedAt])
 }
 
 model Activity {
   id          String    @id @default(cuid())
   type        String
+  kind        String?
   subject     String
   body        String?
   dueAt       DateTime?
@@ -111,6 +167,7 @@ model Activity {
   @@index([dealId])
   @@index([contactId])
   @@index([userId])
+  @@index([kind])
 }
 
 model EmailSync {
@@ -148,6 +205,27 @@ model EmailSyncMessage {
   @@index([contactId])
 }
 
+model WhatsAppMessage {
+  id          String   @id @default(cuid())
+  waMessageId String   @unique
+  direction   String   // "inbound" | "outbound"
+  fromNumber  String
+  toNumber    String
+  body        String?
+  mediaUrl    String?
+  contactId   String?
+  status      String?  // sent|delivered|read|failed
+  receivedAt  DateTime @default(now())
+  rawPayload  String?  // JSON payload from webhook
+
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([fromNumber])
+  @@index([toNumber])
+  @@index([receivedAt])
+}
+
 model AIInsight {
   id        String   @id @default(cuid())
   type      String
@@ -163,4 +241,5 @@ model AIInsight {
 
   @@index([dealId])
   @@index([contactId])
+  @@index([dealId, type, createdAt])
 }

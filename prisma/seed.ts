@@ -27,9 +27,9 @@ async function main() {
 
   console.log("Creating users...")
   const [adminPw, sarahPw, mikePw] = await Promise.all([
-    bcrypt.hash("Admin1234!", 10),
-    bcrypt.hash("Sarah1234!", 10),
-    bcrypt.hash("Mike1234!", 10),
+    bcrypt.hash("Admin1234!", 12),
+    bcrypt.hash("Sarah1234!", 12),
+    bcrypt.hash("Mike1234!", 12),
   ])
   const admin = await prisma.user.create({
     data: { name: "Alex Chen", email: "admin@crm.com", passwordHash: adminPw, role: "ADMIN" },
@@ -44,7 +44,7 @@ async function main() {
 
   console.log("Creating stages...")
   const stages = await Promise.all([
-    prisma.stage.create({ data: { name: "Prospect", order: 1, color: "#64748b", probability: 10, isDefault: true } }),
+    prisma.stage.create({ data: { name: "Prospect", order: 1, color: "#64748b", probability: 10 } }),
     prisma.stage.create({ data: { name: "Qualified", order: 2, color: "#3b82f6", probability: 25 } }),
     prisma.stage.create({ data: { name: "Proposal", order: 3, color: "#6366f1", probability: 50 } }),
     prisma.stage.create({ data: { name: "Negotiation", order: 4, color: "#f59e0b", probability: 75 } }),

@@ -15,8 +15,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar user={{ name: session.user.name ?? "", email: session.user.email ?? "", role: session.user.role }} />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar user={{ name: session.user.name ?? "", email: session.user.email ?? "" }} />
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-[1400px] px-6 py-6 animate-fade-in">
+        <main className="flex-1 overflow-auto scrollbar-thin">
+          <div className="w-full px-6 py-6 animate-fade-in-soft">
             {children}
           </div>
         </main>

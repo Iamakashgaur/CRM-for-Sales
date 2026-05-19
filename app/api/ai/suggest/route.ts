@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { suggestActions } from "@/lib/ai"
 import { daysBetween } from "@/lib/utils"
+import { rateLimit } from "@/lib/rate-limit"
+import { safeError } from "@/lib/api-errors"
 
 export const dynamic = "force-dynamic"
 
@@ -13,6 +15,12 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession()
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+    if (!rateLimit(`ai:${session.user.id}`, 20, 60_000)) {
+      return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+    }
+
+    const forceRefresh = req.nextUrl.searchParams.get("refresh") === "1"
 
     const body = await req.json()
     const parsed = schema.safeParse(body)
@@ -26,6 +34,27 @@ export async function POST(req: NextRequest) {
       },
     })
     if (!deal) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (session.user.role === "REP" && deal.ownerId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    if (!forceRefresh) {
+      const recent = await prisma.aIInsight.findFirst({
+        where: {
+          dealId: deal.id,
+          type: "SUGGESTION",
+          createdAt: { gte: new Date(Date.now() - 86_400_000) },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+      if (recent) {
+        try {
+          return NextResponse.json(JSON.parse(recent.payload))
+        } catch {
+          // fall through
+        }
+      }
+    }
 
     const recentActivities = deal.activities.map((a) => {
       const daysAgo = daysBetween(a.createdAt)
@@ -53,6 +82,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result)
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }

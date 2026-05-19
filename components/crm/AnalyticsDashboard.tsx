@@ -23,7 +23,13 @@ import {
   Award,
   PieChart as PieIcon,
   Activity as ActivityIcon,
+  Sparkles,
+  TrendingDown,
+  MapPin,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react"
+import { useSession } from "next-auth/react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency, getInitials, avatarColor, cn } from "@/lib/utils"
@@ -352,6 +358,10 @@ export function AnalyticsDashboard() {
           </div>
         </ChartCard>
 
+        <LostAnalysisCard />
+
+        <TerritoryInsightsCard />
+
         <ChartCard icon={Award} title="Leaderboard">
           <ul className="space-y-1">
             {d.leaderboard.map((u, i) => {
@@ -372,7 +382,7 @@ export function AnalyticsDashboard() {
                   </div>
                   <Avatar className="h-9 w-9">
                     <AvatarFallback
-                      className={cn("text-white text-xs", avatarColor(u.name))}
+                      className="text-white text-xs" style={{ backgroundColor: avatarColor(u.name) }}
                     >
                       {getInitials(u.name)}
                     </AvatarFallback>
@@ -396,5 +406,207 @@ export function AnalyticsDashboard() {
         </ChartCard>
       </div>
     </div>
+  )
+}
+
+interface LostTheme {
+  name: string
+  count: number
+  examples: string[]
+  suggestion: string
+}
+
+interface LostAnalysisResult {
+  themes: LostTheme[]
+  note?: string
+}
+
+interface ZoneInsight {
+  zone: string
+  narrative: string
+  strengths: string[]
+  gaps: string[]
+  recommendations: string[]
+}
+
+interface TerritoryInsightsResult {
+  zones: ZoneInsight[]
+  overall: string
+  generatedAt: string
+  cached?: boolean
+}
+
+function TerritoryInsightsCard() {
+  const { data: session } = useSession()
+  const role = session?.user?.role ?? "REP"
+  const allowed = role === "ADMIN" || role === "MANAGER"
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
+
+  const q = useQuery<TerritoryInsightsResult>({
+    queryKey: ["ai-territory-insights"],
+    queryFn: async () => {
+      const r = await fetch("/api/ai/territory-insights")
+      if (!r.ok) throw new Error((await r.json()).error ?? "Failed")
+      return r.json()
+    },
+    enabled: allowed,
+  })
+
+  if (!allowed) return null
+
+  function toggle(zone: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(zone)) next.delete(zone)
+      else next.add(zone)
+      return next
+    })
+  }
+
+  return (
+    <ChartCard icon={MapPin} title="Territory intelligence">
+      {q.isLoading && (
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </div>
+      )}
+      {q.data && q.data.zones.length === 0 && (
+        <p className="text-sm text-muted-foreground py-6 text-center">{q.data.overall}</p>
+      )}
+      {q.data && q.data.zones.length > 0 && (
+        <div className="space-y-3">
+          <div className="rounded-md border bg-card p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Overall</div>
+            <p className="text-sm leading-relaxed text-muted-foreground">{q.data.overall}</p>
+          </div>
+          <ul className="space-y-2">
+            {q.data.zones.map((z) => {
+              const open = expanded.has(z.zone)
+              return (
+                <li key={z.zone} className="rounded-md border bg-card overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggle(z.zone)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40"
+                  >
+                    {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span className="text-sm font-medium flex-1 flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3 text-violet-500" />
+                      {z.zone}
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-3 pt-1 space-y-2 border-t bg-muted/20">
+                      <p className="text-xs leading-snug text-muted-foreground">{z.narrative}</p>
+                      {z.strengths.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 mb-0.5">Strengths</div>
+                          <ul className="space-y-0.5">
+                            {z.strengths.map((s, i) => (
+                              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
+                                <span className="text-emerald-500">•</span><span>{s}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {z.gaps.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 mb-0.5">Gaps</div>
+                          <ul className="space-y-0.5">
+                            {z.gaps.map((s, i) => (
+                              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
+                                <span className="text-rose-500">•</span><span>{s}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {z.recommendations.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-700 mb-0.5">Recommendations</div>
+                          <ul className="space-y-0.5">
+                            {z.recommendations.map((s, i) => (
+                              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
+                                <span className="text-violet-500">•</span><span>{s}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          {q.data.cached && (
+            <p className="text-[10px] text-muted-foreground text-center">Cached. Refreshes every 12 hours.</p>
+          )}
+        </div>
+      )}
+    </ChartCard>
+  )
+}
+
+function LostAnalysisCard() {
+  const { data: session } = useSession()
+  const role = session?.user?.role ?? "REP"
+  const allowed = role === "ADMIN" || role === "MANAGER"
+
+  const q = useQuery<LostAnalysisResult>({
+    queryKey: ["ai-lost-analysis"],
+    queryFn: async () => {
+      const r = await fetch("/api/ai/lost-analysis")
+      if (!r.ok) throw new Error("Failed")
+      return r.json()
+    },
+    enabled: allowed,
+  })
+
+  if (!allowed) return null
+
+  return (
+    <ChartCard icon={TrendingDown} title="Why we lose deals">
+      {q.isLoading && (
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </div>
+      )}
+      {q.data?.note && (
+        <p className="text-sm text-muted-foreground py-6 text-center">{q.data.note}</p>
+      )}
+      {q.data?.themes && q.data.themes.length > 0 && (
+        <ul className="space-y-2">
+          {q.data.themes.map((t, i) => (
+            <li key={i} className="rounded-md border bg-card p-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3 text-violet-500" />
+                  {t.name}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums">{t.count} deals</span>
+              </div>
+              {t.suggestion && (
+                <p className="text-xs text-muted-foreground leading-snug">
+                  <span className="text-foreground font-medium">Suggestion:</span> {t.suggestion}
+                </p>
+              )}
+              {t.examples && t.examples.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  {t.examples.slice(0, 2).map((ex, j) => (
+                    <div key={j} className="truncate">&quot;{ex}&quot;</div>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ChartCard>
   )
 }

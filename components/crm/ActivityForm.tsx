@@ -19,27 +19,63 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+import { ACTIVITY_TYPES, type ActivityType } from "@/lib/constants"
+
 const Schema = z.object({
-  type: z.enum(["CALL", "EMAIL", "MEETING", "NOTE", "TASK"]),
+  type: z.enum(ACTIVITY_TYPES),
   subject: z.string().min(1, "Subject required"),
   body: z.string().optional(),
   dueAt: z.string().optional(),
 })
+
+export interface ActivityInitial {
+  id: string
+  type: ActivityType
+  subject: string
+  body: string | null
+  dueAt: string | null
+  completedAt: string | null
+}
 
 interface Props {
   open: boolean
   onOpenChange: (o: boolean) => void
   dealId?: string
   contactId?: string
+  initial?: ActivityInitial | null
 }
 
-export function ActivityForm({ open, onOpenChange, dealId, contactId }: Props) {
+function toLocalDateTimeInput(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ""
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export function ActivityForm({ open, onOpenChange, dealId, contactId, initial }: Props) {
   const qc = useQueryClient()
-  const [type, setType] = React.useState<"CALL" | "EMAIL" | "MEETING" | "NOTE" | "TASK">("NOTE")
+  const [type, setType] = React.useState<ActivityType>("NOTE")
   const [subject, setSubject] = React.useState("")
   const [body, setBody] = React.useState("")
   const [dueAt, setDueAt] = React.useState("")
   const [errors, setErrors] = React.useState<Record<string, string>>({})
+
+  React.useEffect(() => {
+    if (!open) return
+    if (initial) {
+      setType(initial.type)
+      setSubject(initial.subject)
+      setBody(initial.body ?? "")
+      setDueAt(toLocalDateTimeInput(initial.dueAt))
+    } else {
+      setType("NOTE")
+      setSubject("")
+      setBody("")
+      setDueAt("")
+    }
+    setErrors({})
+  }, [initial, open])
 
   function reset() {
     setType("NOTE")
@@ -58,16 +94,21 @@ export function ActivityForm({ open, onOpenChange, dealId, contactId }: Props) {
         setErrors(fieldErrors)
         throw new Error("Invalid")
       }
-      const res = await fetch("/api/activities", {
-        method: "POST",
+      const url = initial?.id ? `/api/activities/${initial.id}` : "/api/activities"
+      const method = initial?.id ? "PUT" : "POST"
+      const payload = initial?.id
+        ? parsed.data
+        : { ...parsed.data, dealId, contactId }
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...parsed.data, dealId, contactId }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed")
       return res.json()
     },
     onSuccess: () => {
-      toast.success("Activity logged")
+      toast.success(initial?.id ? "Activity updated" : "Activity logged")
       qc.invalidateQueries({ queryKey: ["activities"] })
       reset()
       onOpenChange(false)
@@ -81,13 +122,13 @@ export function ActivityForm({ open, onOpenChange, dealId, contactId }: Props) {
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset() }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log activity</DialogTitle>
+          <DialogTitle>{initial?.id ? "Edit activity" : "Log activity"}</DialogTitle>
           <DialogDescription>Record a call, email, meeting, note or task.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Type</Label>
-            <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
+            <Label>Type <span className="text-destructive">*</span></Label>
+            <Select value={type} onValueChange={(v) => setType(v as ActivityType)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -101,7 +142,7 @@ export function ActivityForm({ open, onOpenChange, dealId, contactId }: Props) {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Subject</Label>
+            <Label>Subject <span className="text-destructive">*</span></Label>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
             {errors.subject && <p className="text-xs text-destructive">{errors.subject}</p>}
           </div>
@@ -119,7 +160,7 @@ export function ActivityForm({ open, onOpenChange, dealId, contactId }: Props) {
             Cancel
           </Button>
           <Button onClick={() => m.mutate()} disabled={m.isPending}>
-            {m.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+            {m.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : initial?.id ? "Save" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,13 +1,28 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getServerSession } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { fetchGmailMessagesByContact } from "@/lib/gmail"
 import { fetchOutlookMessagesByContact } from "@/lib/outlook"
+import { safeError } from "@/lib/api-errors"
+import { decrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
 
 const syncSchema = z.object({ provider: z.enum(["GMAIL", "OUTLOOK"]) })
+
+async function pMapWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = []
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit)
+    results.push(...(await Promise.all(chunk.map(fn))))
+  }
+  return results
+}
 
 export async function GET() {
   try {
@@ -20,7 +35,7 @@ export async function GET() {
     })
     return NextResponse.json({ syncs })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
 
@@ -38,15 +53,24 @@ export async function POST(req: NextRequest) {
     })
     if (!sync) return NextResponse.json({ error: "Provider not connected" }, { status: 404 })
 
-    const contacts = await prisma.contact.findMany({ where: { ownerId: session.user.id } })
-    let synced = 0
+    const provider = parsed.data.provider
+    const syncRecord = sync
+    const decAccess = decrypt(syncRecord.accessToken)
+    const decRefresh = syncRecord.refreshToken ? decrypt(syncRecord.refreshToken) : null
+    const authCtx = { syncId: syncRecord.id, refreshToken: decRefresh }
+    const contacts = await prisma.contact.findMany({
+      where: { ownerId: session.user.id },
+      take: 200,
+      orderBy: { updatedAt: "desc" },
+    })
 
-    for (const contact of contacts) {
+    async function fetchAndStore(contact: { id: string; email: string }): Promise<number> {
       const messages =
-        parsed.data.provider === "GMAIL"
-          ? await fetchGmailMessagesByContact(sync.accessToken, contact.email)
-          : await fetchOutlookMessagesByContact(sync.accessToken, contact.email)
+        provider === "GMAIL"
+          ? await fetchGmailMessagesByContact(decAccess, contact.email, 25, authCtx)
+          : await fetchOutlookMessagesByContact(decAccess, contact.email, 25, authCtx)
 
+      let count = 0
       for (const m of messages) {
         try {
           await prisma.emailSyncMessage.upsert({
@@ -58,7 +82,7 @@ export async function POST(req: NextRequest) {
               to: m.to,
               body: m.body ?? null,
               receivedAt: m.receivedAt,
-              syncId: sync.id,
+              syncId: syncRecord.id,
               contactId: contact.id,
             },
             update: {
@@ -70,12 +94,16 @@ export async function POST(req: NextRequest) {
               contactId: contact.id,
             },
           })
-          synced++
+          count++
         } catch {
           continue
         }
       }
+      return count
     }
+
+    const counts = await pMapWithLimit(contacts, 5, fetchAndStore)
+    const synced = counts.reduce((a, b) => a + b, 0)
 
     await prisma.emailSync.update({
       where: { id: sync.id },
@@ -84,6 +112,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ synced })
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    return NextResponse.json({ error: safeError(err) }, { status: 500 })
   }
 }
